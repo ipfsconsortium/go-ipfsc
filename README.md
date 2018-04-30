@@ -2,7 +2,7 @@
 
 An implementation of the IPFS consortium written in golang
 
-** Pre-alpha stuff for now **
+**Pre-alpha stuff for now**
 
 ## Quick start
 
@@ -24,11 +24,6 @@ contracts:
     IPFSProxy:
         JSONURL: <json with abi and contract, see notes> 
         Address: <the address where the contract is deployed>
-        Deploy:
-            Members:
-                - 0xda4224ea7910d9c56d2f947d63088a556437da41
-            Required: 1
-            PersistLimit: 1
 
 IPFS:
     APIURL: <the URL of the IPFS api, eg: http://localhost:5001>
