@@ -1,0 +1,280 @@
+package eth
+
+import (
+	"context"
+	"encoding/hex"
+	"fmt"
+	"math/big"
+	"sync"
+	"time"
+
+	ethereum "github.com/ethereum/go-ethereum"
+	abi "github.com/ethereum/go-ethereum/accounts/abi"
+	common "github.com/ethereum/go-ethereum/common"
+	types "github.com/ethereum/go-ethereum/core/types"
+	ethclient "github.com/ethereum/go-ethereum/ethclient"
+
+	log "github.com/sirupsen/logrus"
+)
+
+type subscriptionEventHandler struct {
+	Address        common.Address
+	EventSignature string
+	Topic          string
+	Handler        EventHandlerFunc
+}
+
+type SubscriptionEventDispatcher struct {
+	client *ethclient.Client
+
+	mutex *sync.Mutex
+	queue []*types.Log
+
+	filterch     chan types.Log
+	updatech     chan bool
+	terminatech  chan bool
+	terminatedch chan bool
+
+	savepoint SavePoint
+
+	subscription  ethereum.Subscription
+	eventHandlers []subscriptionEventHandler
+}
+
+func NewSubscriptionEventDispatcher(client *ethclient.Client, savepoint SavePoint) *SubscriptionEventDispatcher {
+
+	return &SubscriptionEventDispatcher{
+		client: client,
+		mutex:  &sync.Mutex{},
+		queue:  []*types.Log{},
+
+		updatech:     make(chan bool),
+		terminatech:  make(chan bool),
+		terminatedch: make(chan bool),
+
+		savepoint: savepoint,
+	}
+}
+
+// Register registers a function to be called on event emission. Call NotifyUpdate if this is done
+//   when everything started
+func (e *SubscriptionEventDispatcher) RegisterHandler(address common.Address, abi *abi.ABI, event string, handler EventHandlerFunc) {
+
+	abievent, ok := abi.Events[event]
+	if !ok {
+		panic(fmt.Errorf("Event %v not found", event))
+	}
+	topicID := abievent.Id()
+
+	eventHandler := subscriptionEventHandler{
+		Address:        address,
+		EventSignature: abievent.String(),
+		Topic:          "0x" + hex.EncodeToString(topicID[:]),
+		Handler:        handler,
+	}
+
+	e.mutex.Lock()
+	e.eventHandlers = append(e.eventHandlers, eventHandler)
+	e.mutex.Unlock()
+}
+
+// NotifyUpdate updates the registers
+func (e *SubscriptionEventDispatcher) NotifyHandlersChanged() {
+	e.updatech <- true
+}
+
+func (e *SubscriptionEventDispatcher) append(eventlog *types.Log) {
+	e.mutex.Lock()
+	e.queue = append(e.queue, eventlog)
+	e.mutex.Unlock()
+}
+
+func (e *SubscriptionEventDispatcher) process() bool {
+
+	// pop next from the queue
+	e.mutex.Lock()
+	var logevent *types.Log
+	if len(e.queue) > 0 {
+		logevent = e.queue[0]
+		e.queue = e.queue[1:]
+	}
+	e.mutex.Unlock()
+
+	// discard event if there's no element to process or if removed
+	if logevent == nil || logevent.Removed {
+		return false
+	}
+
+	// get next log to be processed
+	lastBlock, lastTxIndex, lastLogIndex, err := e.savepoint.Load()
+	if err != nil {
+		log.WithFields(log.Fields{
+			"err": err,
+		}).Error("EVENT cannot load savepoint ")
+		e.QueryStop()
+	}
+
+	// discard it if has been already processed
+	if logevent.BlockNumber < lastBlock ||
+		(logevent.BlockNumber == lastBlock && logevent.TxIndex < lastTxIndex) ||
+		(logevent.BlockNumber == lastBlock && logevent.TxIndex == lastTxIndex && logevent.Index < lastLogIndex) {
+		return false
+	}
+
+	// find the appropiate handler for it
+	e.mutex.Lock()
+	var handler *subscriptionEventHandler
+	for _, v := range e.eventHandlers {
+		if logevent.Address == v.Address && logevent.Topics[0].Hex() == v.Topic {
+			handler = &v
+			break
+		}
+	}
+	e.mutex.Unlock()
+
+	if handler == nil {
+		log.WithFields(log.Fields{
+			"tx":    logevent.TxHash,
+			"topic": logevent.Topics[0].Hex(),
+		}).Error("EVENT handler not found ")
+		e.QueryStop()
+		return true
+	}
+
+	// run the handler
+	log.WithFields(log.Fields{
+		"block":     logevent.BlockNumber,
+		"tx":        logevent.TxHash,
+		"signature": handler.EventSignature,
+	}).Debug("EVENT run handler ")
+	err = handler.Handler(logevent)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"tx":    logevent.TxHash.Hex(),
+			"topic": logevent.Topics[0].Hex(),
+			"err":   err,
+		}).Error("EVENT failed handling event")
+		e.QueryStop()
+		return true
+	}
+
+	// store commit point
+	err = e.savepoint.Save(logevent)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"err": err,
+		}).Error("EVENT cannot store savepoint ")
+		e.QueryStop()
+		return true
+	}
+
+	return true
+}
+
+func (e *SubscriptionEventDispatcher) QueryStop() {
+	go func() {
+		e.terminatech <- true
+	}()
+}
+
+func (e *SubscriptionEventDispatcher) WaitStopped() {
+	<-e.terminatedch
+}
+
+func (e *SubscriptionEventDispatcher) addresses() []common.Address {
+
+	addrs := []common.Address{}
+
+	for _, v := range e.eventHandlers {
+		found := false
+		for _, addr := range addrs {
+			if addr == v.Address {
+				found = true
+				break
+			}
+		}
+		if !found {
+			addrs = append(addrs, v.Address)
+		}
+	}
+
+	return addrs
+}
+
+func (e *SubscriptionEventDispatcher) install() {
+
+	ctx := context.TODO()
+	filterch := make(chan types.Log)
+
+	addrs := e.addresses()
+
+	block, _, _, err := e.savepoint.Load()
+	if err != nil {
+		log.WithField("err", err).Error("EVENT failed to read savepoint")
+		e.QueryStop()
+		return
+	}
+
+	log.WithField("fromBlock", block).Info("EVENT start listening")
+
+	query := ethereum.FilterQuery{
+		FromBlock: big.NewInt(int64(block)),
+		ToBlock:   nil,
+		Addresses: addrs,
+		Topics:    [][]common.Hash{{}}, // optimize
+	}
+
+	subscripton, err := e.client.SubscribeFilterLogs(ctx, query, filterch)
+	if err != nil {
+		log.WithField("err", err).Error("EVENT failed subscribing to logs")
+		e.QueryStop()
+		return
+	}
+
+	if e.filterch != nil {
+		for len(e.filterch) > 0 {
+			eventlog := <-e.filterch
+			// TODO ??? this is going to work?
+			e.append(&eventlog)
+		}
+		e.subscription.Unsubscribe()
+	}
+
+	e.subscription = subscripton
+	e.filterch = filterch
+}
+
+func (e *SubscriptionEventDispatcher) Start() {
+
+	go func() {
+		for true {
+
+			select {
+			case <-e.terminatech:
+				log.Debug("EVENT terminatech")
+				e.terminatedch <- true
+				return
+
+			case <-e.updatech:
+				log.Debug("EVENT updatech")
+				e.install()
+
+			case logevent := <-e.filterch:
+				log.WithFields(log.Fields{
+					"block": logevent.BlockNumber,
+					"tx":    logevent.TxHash.Hex(),
+				}).Debug("EVENT filterch")
+				e.append(&logevent)
+
+			default:
+				log.Debug("EVENT Processing events")
+				if !e.process() {
+					time.Sleep(4 * time.Second)
+				}
+			}
+		}
+
+	}()
+
+	e.updatech <- true
+}
