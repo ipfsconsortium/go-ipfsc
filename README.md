@@ -69,14 +69,41 @@ contracts:
 
 ## Operation
 
+```
+        _
+  __ _ (_) _ __    ___
+ / _` || || '_ \  / __|
+| (_| || || |_) || (__
+ \__, ||_|| .__/  \___|
+ |___/    |_|
+IPFS Consortium go implementation.
+
+Usage:
+  gipc [flags]
+  gipc [command]
+
+Available Commands:
+  addhash         Add hash (send transaction)
+  deployproxy     Deploy the proxy smartcontract (send transaction)
+  dumpdb          Dumps the database
+  help            Help about any command
+  initdb          Initializes the database
+  rmhash          Remove a hash (send transaction)
+  serve           Start the server
+  setpersistlimit Sets the persist limit (send transaction)
+  skiptx          Skip a transaction
+
+Flags:
+      --config string    config file
+  -h, --help             help for gipc
+      --verbose string   verbose level (default "INFO")
+
+Use "gipc [command] --help" for more information about a command.
+
+```
+
 - `gipc --verbose=DEBUG` to show more info
-- `gipc --config=<path>` to set the configuration path manually
-
-- `gipc addhash <ipfshash> <ttl>` creates a transaction to add a hash
-- `gipc rmhash <ipfshash>` creates a transaction to remove a hash
-- `gipc setpersistlimit <value>` creates a transaction to set the maximum persistlimit
-
-- `gipc dumpdb` dumps the content of the database. *the server must be stopped*
+- `gipc dumpdb` *the server must be stopped*
 - `gipc skiptx <txhash>` skips the processing of a transaction. If for whatever reason a transacton event cannot be processed, the server stops, this is by design. You must verify that all is ok, and specify that this transaction should be avoided with this command. *the server must be stopped*
 
 
