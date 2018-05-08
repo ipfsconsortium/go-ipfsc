@@ -19,9 +19,10 @@ type Config struct {
 
 	Contracts struct {
 		IPFSProxy struct {
-			JSONURL string
-			Address string
-			Deploy  struct {
+			NetworkID uint64
+			JSONURL   string
+			Address   string
+			Deploy    struct {
 				Members      []string
 				Required     uint
 				PersistLimit uint64
@@ -36,7 +37,8 @@ type Config struct {
 		APIURL string
 	}
 
-	Web3 struct {
+	Networks []struct {
+		NetworkID  uint64
 		RPCURL     string
 		StartBlock uint64
 	}

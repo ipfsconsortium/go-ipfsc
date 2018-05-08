@@ -37,52 +37,94 @@ var serveCmd = &cobra.Command{
 }
 
 var deployProxyCmd = &cobra.Command{
-	Use:   "deployproxy",
+	Use:   "proxy-deploy",
 	Short: "Deploy the proxy smartcontract (send transaction)",
 	Long:  "Deploy the proxy smartcontract",
 	Run:   cmd.DeployProxy,
 }
 
-var addHashCmd = &cobra.Command{
-	Use:   "addhash",
+var hashAddCmd = &cobra.Command{
+	Use:   "hash-add",
 	Short: "Add hash (send transaction)",
-	Long:  "addhash <ipfshash> <ttl>",
+	Long:  "hash-add <ipfshash> <ttl>",
 	Run:   cmd.AddHash,
 }
 
-var rmHashCmd = &cobra.Command{
-	Use:   "rmhash",
+var hashRmCmd = &cobra.Command{
+	Use:   "hash-rm",
 	Short: "Remove a hash (send transaction)",
-	Long:  "rmhash <ipfshash>",
+	Long:  "hash-rm <ipfshash>",
 	Run:   cmd.RemoveHash,
 }
 
+var metaAddCmd = &cobra.Command{
+	Use:   "meta-add",
+	Short: "Add a new meta object (send transaction)",
+	Long:  "hash-add <ipfshash>",
+	Run:   cmd.AddMetadataObject,
+}
+
+var metaRmCmd = &cobra.Command{
+	Use:   "meta-rm",
+	Short: "Remove a meta object (send transaction)",
+	Long:  "meta-rm <ipfshash>",
+	Run:   cmd.RemoveMetadataObject,
+}
+
 var setPersistLimitCmd = &cobra.Command{
-	Use:   "setpersistlimit",
+	Use:   "proxy-persistlimit",
 	Short: "Sets the persist limit (send transaction)",
-	Long:  "setpersistlimit <limit>",
+	Long:  "proxy-persistlimit <limit>",
 	Run:   cmd.SetPersistLimit,
 }
 
-var dumpDbCmd = &cobra.Command{
-	Use:   "dumpdb",
+var dbDumpCmd = &cobra.Command{
+	Use:   "db-dump",
 	Short: "Dumps the database",
 	Long:  "Dumps the database",
 	Run:   cmd.DumpDb,
 }
 
-var initDbCmd = &cobra.Command{
-	Use:   "initdb",
+var dbInitCmd = &cobra.Command{
+	Use:   "db-init",
 	Short: "Initializes the database",
 	Long:  "Initialized the database",
 	Run:   cmd.InitDb,
 }
 
-var skipTxCmd = &cobra.Command{
-	Use:   "skiptx",
+var dbSkipTxCmd = &cobra.Command{
+	Use:   "db-skiptx",
 	Short: "Skip a transaction",
 	Long:  "Do not process the selected transaction",
 	Run:   cmd.AddSkipTx,
+}
+
+var dbMetaRmCmd = &cobra.Command{
+	Use:   "db-meta-rm",
+	Short: "Remove meta object from DB",
+	Long:  "Remove meta object from DB",
+	Run:   cmd.DbRemoveMetadataObject,
+}
+
+var memberAdd = &cobra.Command{
+	Use:   "proxy-member-add",
+	Short: "Adds a new member (send transaction)",
+	Long:  "proxy-member-add <address>",
+	Run:   cmd.AddMember,
+}
+
+var memberRm = &cobra.Command{
+	Use:   "proxy-member-rm",
+	Short: "Removes a new member (send transaction)",
+	Long:  "proxy-member-rm <address>",
+	Run:   cmd.RemoveMember,
+}
+
+var memberReqCmd = &cobra.Command{
+	Use:   "proxy-member-req",
+	Short: "Sets member approval requirement (send transaction)",
+	Long:  "proxy-member-req <quorum>",
+	Run:   cmd.SetMemberRequirement,
 }
 
 // ExecuteCmd adds all child commands to the root command sets flags appropriately.
@@ -105,12 +147,18 @@ func init() {
 
 	RootCmd.AddCommand(serveCmd)
 	RootCmd.AddCommand(deployProxyCmd)
-	RootCmd.AddCommand(addHashCmd)
-	RootCmd.AddCommand(rmHashCmd)
-	RootCmd.AddCommand(dumpDbCmd)
-	RootCmd.AddCommand(initDbCmd)
-	RootCmd.AddCommand(skipTxCmd)
+	RootCmd.AddCommand(hashAddCmd)
+	RootCmd.AddCommand(hashRmCmd)
+	RootCmd.AddCommand(metaAddCmd)
+	RootCmd.AddCommand(metaRmCmd)
 	RootCmd.AddCommand(setPersistLimitCmd)
+	RootCmd.AddCommand(memberAdd)
+	RootCmd.AddCommand(memberRm)
+	RootCmd.AddCommand(memberReqCmd)
+	RootCmd.AddCommand(dbSkipTxCmd)
+	RootCmd.AddCommand(dbDumpCmd)
+	RootCmd.AddCommand(dbMetaRmCmd)
+	RootCmd.AddCommand(dbInitCmd)
 
 }
 

@@ -36,7 +36,7 @@ type Web3Client struct {
 }
 
 // NewWeb3Client creates a client, using a keystore and an account for transactions
-func NewWeb3Client(rpcURL string, ks *keystore.KeyStore, account accounts.Account) (*Web3Client, error) {
+func NewWeb3ClientWithURL(rpcURL string, ks *keystore.KeyStore, account accounts.Account) (*Web3Client, error) {
 
 	var err error
 
@@ -44,6 +44,17 @@ func NewWeb3Client(rpcURL string, ks *keystore.KeyStore, account accounts.Accoun
 	if err != nil {
 		return nil, err
 	}
+
+	return &Web3Client{
+		Client:         client,
+		Ks:             ks,
+		Account:        account,
+		ReceiptTimeout: 120 * time.Second,
+	}, nil
+}
+
+// NewWeb3Client creates a client, using a keystore and an account for transactions
+func NewWeb3Client(client *ethclient.Client, ks *keystore.KeyStore, account accounts.Account) (*Web3Client, error) {
 
 	return &Web3Client{
 		Client:         client,

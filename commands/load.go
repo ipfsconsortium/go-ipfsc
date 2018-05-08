@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
@@ -13,27 +14,28 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 
-	shell "github.com/ipfs/go-ipfs-api"
+	shell "github.com/adriamb/go-ipfs-api"
 )
 
 var (
-	client   *eth.Web3Client
-	contract *eth.Contract
-	ipfs     *shell.Shell
-	storage  *sto.Storage
+	ethclients map[uint64]*ethclient.Client
+	proxy      *eth.Contract
+	ipfs       *shell.Shell
+	storage    *sto.Storage
 )
 
 func load(withStorage bool) error {
 
-	if client != nil {
+	if proxy != nil {
 		// already initialized
 		return nil
 	}
 
 	var err error
 
-	if err = loadEthClient(); err != nil {
+	if err = loadEthClients(); err != nil {
 		return err
 	}
 	if err = loadIPFSClient(); err != nil {
@@ -60,7 +62,40 @@ func loadStorage() error {
 
 }
 
-func loadEthClient() error {
+func loadEthClients() error {
+
+	// load all clients
+
+	ethclients = make(map[uint64]*ethclient.Client)
+
+	for _, network := range cfg.C.Networks {
+
+		log.WithField("network", network.RPCURL).Info("Checking network.")
+
+		client, err := ethclient.Dial(network.RPCURL)
+		if err != nil {
+			return err
+		}
+
+		networkid, err := client.NetworkID(context.Background())
+		if err != nil {
+			return err
+		}
+
+		if networkid.Uint64() != network.NetworkID {
+			return fmt.Errorf("NetworkID RPC return a different networkid", network.NetworkID)
+		}
+
+		ethclients[network.NetworkID] = client
+
+	}
+
+	return nil
+}
+
+func loadContract() error {
+
+	// load the keystore
 
 	var err error
 
@@ -77,8 +112,10 @@ func loadEthClient() error {
 		return err
 	}
 
-	client, err = eth.NewWeb3Client(
-		cfg.C.Web3.RPCURL,
+	// crete web3 client & get info
+
+	client, err := eth.NewWeb3Client(
+		ethclients[cfg.C.Contracts.IPFSProxy.NetworkID],
 		ks,
 		account,
 	)
@@ -97,12 +134,8 @@ func loadEthClient() error {
 		"account": account.Address.Hex(),
 		"balance": balance,
 	}).Info("Account loaded from keystore")
-	return nil
-}
 
-func loadContract() error {
-
-	var err error
+	// create the contract
 
 	resp, err := http.Get(cfg.C.Contracts.IPFSProxy.JSONURL)
 	if err != nil {
@@ -113,10 +146,11 @@ func loadContract() error {
 
 	if cfg.C.Contracts.IPFSProxy.Address != "" {
 		address := common.HexToAddress(cfg.C.Contracts.IPFSProxy.Address)
-		contract, err = eth.NewContractFromJson(client, resp.Body, &address)
+		proxy, err = eth.NewContractFromJson(client, resp.Body, &address)
 	} else {
-		contract, err = eth.NewContractFromJson(client, resp.Body, nil)
+		proxy, err = eth.NewContractFromJson(client, resp.Body, nil)
 	}
+
 	return err
 
 }

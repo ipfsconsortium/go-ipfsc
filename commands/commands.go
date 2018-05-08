@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -15,34 +15,120 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	errInvalidParameters = errors.New("invalid parameters")
+)
+
+// HashAdd command
 func AddHash(cmd *cobra.Command, args []string) {
 
 	if len(args) != 2 {
-		must(fmt.Errorf("addhash <ipfshash> <ttl>"))
+		must(errInvalidParameters)
 	}
 	must(load(false))
 
 	ttl := new(big.Int)
 	ttl.SetString(args[1], 10)
-	_, _, err := contract.SendTransactionSync(
+	_, _, err := proxy.SendTransactionSync(
 		big.NewInt(0), 0,
 		"addHash", args[0], ttl,
 	)
 	must(err)
 }
 
+// HashRm command
 func RemoveHash(cmd *cobra.Command, args []string) {
 	if len(args) != 1 {
-		must(fmt.Errorf("rmhash <ipfshash>"))
+		must(errInvalidParameters)
 	}
 	must(load(false))
-	_, _, err := contract.SendTransactionSync(
+	_, _, err := proxy.SendTransactionSync(
 		big.NewInt(0), 0,
 		"removeHash", args[0],
 	)
 	must(err)
 }
 
+// MetaAdd command
+func AddMetadataObject(cmd *cobra.Command, args []string) {
+
+	if len(args) != 1 {
+		must(errInvalidParameters)
+	}
+	must(load(false))
+
+	_, _, err := proxy.SendTransactionSync(
+		big.NewInt(0), 0,
+		"addMetadataObject", args[0],
+	)
+	must(err)
+}
+
+// MetaRm command
+func RemoveMetadataObject(cmd *cobra.Command, args []string) {
+	if len(args) != 1 {
+		must(errInvalidParameters)
+	}
+	must(load(false))
+	_, _, err := proxy.SendTransactionSync(
+		big.NewInt(0), 0,
+		"removeMetadataObject", args[0],
+	)
+	must(err)
+}
+
+// AddMember command
+func AddMember(cmd *cobra.Command, args []string) {
+	if len(args) != 1 {
+		must(errInvalidParameters)
+	}
+	must(load(false))
+	_, _, err := proxy.SendTransactionSync(
+		big.NewInt(0), 0,
+		"addMember", common.BytesToAddress([]byte(args[0])),
+	)
+	must(err)
+}
+
+// RemoveMember command
+func RemoveMember(cmd *cobra.Command, args []string) {
+	if len(args) != 1 {
+		must(errInvalidParameters)
+	}
+	must(load(false))
+	_, _, err := proxy.SendTransactionSync(
+		big.NewInt(0), 0,
+		"removeMember", common.BytesToAddress([]byte(args[0])),
+	)
+	must(err)
+}
+
+// SetMemberRequirement command
+func SetMemberRequirement(cmd *cobra.Command, args []string) {
+	if len(args) != 1 {
+		must(errInvalidParameters)
+	}
+	must(load(false))
+
+	required := new(big.Int)
+	required.SetString(args[0], 10)
+	_, _, err := proxy.SendTransactionSync(
+		big.NewInt(0), 0,
+		"changeRequirement", required,
+	)
+	must(err)
+}
+
+// MemberInfo command
+func MemberInfo(cmd *cobra.Command, args []string) {
+	if len(args) != 0 {
+		must(errInvalidParameters)
+	}
+	must(load(false))
+	// TODO
+}
+
+// SetPersistLimit command
 func SetPersistLimit(cmd *cobra.Command, args []string) {
 	if len(args) != 1 {
 		must(fmt.Errorf("setpersistlimit <limit>"))
@@ -54,7 +140,7 @@ func SetPersistLimit(cmd *cobra.Command, args []string) {
 		must(fmt.Errorf("cannot parse limit parameter"))
 	}
 
-	_, _, err := contract.SendTransactionSync(
+	_, _, err := proxy.SendTransactionSync(
 		big.NewInt(0), 0,
 		"setTotalPersistLimit", limit,
 	)
@@ -62,6 +148,7 @@ func SetPersistLimit(cmd *cobra.Command, args []string) {
 	must(err)
 }
 
+// AddSkipTx command
 func AddSkipTx(cmd *cobra.Command, args []string) {
 
 	if len(args) != 1 {
@@ -71,6 +158,7 @@ func AddSkipTx(cmd *cobra.Command, args []string) {
 	must(storage.AddSkipTx(common.HexToHash(args[0])))
 }
 
+// AddSkipTx command
 func DeployProxy(cmd *cobra.Command, args []string) {
 
 	must(load(true))
@@ -82,26 +170,29 @@ func DeployProxy(cmd *cobra.Command, args []string) {
 		members[i] = common.HexToAddress(v)
 	}
 
-	_, _, err := contract.DeploySync(
+	_, _, err := proxy.DeploySync(
 		members,
 		big.NewInt(int64(cfg.C.Contracts.IPFSProxy.Deploy.Required)),
 		big.NewInt(int64(cfg.C.Contracts.IPFSProxy.Deploy.PersistLimit)),
 	)
 	must(err)
-	log.WithField("address", contract.Address().Hex()).Info("Goic contract deployed")
+	log.WithField("address", proxy.Address().Hex()).Info("Goic contract deployed")
 
-	err = storage.AddContract(*contract.Address())
-	must(err)
-
-}
-
-func Config(cmd *cobra.Command, args []string) {
-
-	json, _ := json.MarshalIndent(cfg.C, "", "  ")
-	log.Println("Efective configuration: " + string(json))
+	must(storage.AddContract(*proxy.Address()))
 
 }
 
+func DbRemoveMetadataObject(cmd *cobra.Command, args []string) {
+	must(loadStorage())
+
+	if len(args) != 1 {
+		must(fmt.Errorf("pameter <ipfshash>"))
+	}
+
+	must(storage.RemoveMetadata(args[0]))
+}
+
+// DumpDb command
 func DumpDb(cmd *cobra.Command, args []string) {
 
 	must(loadStorage())
@@ -109,62 +200,33 @@ func DumpDb(cmd *cobra.Command, args []string) {
 	storage.Dump(os.Stdout)
 }
 
+// InitDb command
 func InitDb(cmd *cobra.Command, args []string) {
 
-	must(load(true))
+	must(loadStorage())
 
 	storage.SetGlobals(sto.GlobalsEntry{
 		CurrentQuota: 0,
-		LastBlock:    cfg.C.Web3.StartBlock,
-		LastLogIndex: 0,
-		LastTxIndex:  0,
 	})
-}
 
-/*
-func Test(cmd *cobra.Command, args []string) {
-
-	client, err := ethclient.Dial("http://localhost:8545")
-	must(err)
-	download := service.NewReceiptDownloader(client, 20)
-	download.Start()
-
-	startblock := 4000000
-	for blockno := startblock; blockno < startblock+5000; blockno++ {
-		block, err := client.BlockByNumber(context.TODO(), big.NewInt(int64(blockno)))
-		must(err)
-		if len(block.Transactions()) == 0 {
-			continue
-		}
-		for _, tx := range block.Transactions() {
-			download.Request(tx.Hash())
-		}
-		for _, tx := range block.Transactions() {
-			_, err := download.Get(tx.Hash())
-			must(err)
-			download.Forget(tx.Hash())
-		}
-		queuelen, pendinglen := download.Stats()
-		log.Info("Downloaded block ", blockno, " ",
-			block.Transactions().Len(),
-			" len(queue)=", queuelen,
-			" len(pending)=", pendinglen,
-		)
+	for _, network := range cfg.C.Networks {
+		storage.SetSavePoint(network.NetworkID, &sto.SavePointEntry{
+			LastBlock:    network.StartBlock,
+			LastTxIndex:  0,
+			LastLogIndex: 0,
+		})
 	}
-	download.QueryStop()
-	download.WaitStopped()
-
 }
-*/
 
+// Serve command
 func Serve(cmd *cobra.Command, args []string) {
 
 	must(load(true))
 
-	service := service.NewService(
-		client, contract, ipfs, storage,
-	)
-
-	service.Serve()
+	service.NewService(
+		ethclients,
+		cfg.C.Contracts.IPFSProxy.NetworkID, proxy,
+		ipfs, storage,
+	).Serve()
 
 }

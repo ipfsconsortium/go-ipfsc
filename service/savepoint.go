@@ -1,46 +1,42 @@
 package service
 
 import (
-	"fmt"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ipfsconsortium/gipc/storage"
-
-	log "github.com/sirupsen/logrus"
 )
 
 type savePoint struct {
-	storage *storage.Storage
+	storage   *storage.Storage
+	networkid uint64
 }
 
-func newSavePoint(storage *storage.Storage) *savePoint {
-	return &savePoint{storage}
+func newSavePoint(storage *storage.Storage, networkid uint64) *savePoint {
+	return &savePoint{storage, networkid}
 }
 
 func (s *savePoint) Load() (lastBlock uint64, lastTxIndex, lastLogIndex uint, err error) {
-	globals, err := s.storage.Globals()
+	sp, err := s.storage.SavePoint(s.networkid)
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	return globals.LastBlock, globals.LastTxIndex, globals.LastLogIndex, nil
+	return sp.LastBlock, sp.LastTxIndex, sp.LastLogIndex, nil
 }
 
 func (s *savePoint) Save(logevent *types.Log) error {
-	globals, err := s.storage.Globals()
+
+	sp, err := s.storage.SavePoint(s.networkid)
 	if err != nil {
 		return err
 	}
 
-	globals.LastBlock = logevent.BlockNumber
-	globals.LastTxIndex = logevent.TxIndex
-	globals.LastLogIndex = logevent.Index
+	sp = &storage.SavePointEntry{
+		LastBlock:    logevent.BlockNumber,
+		LastTxIndex:  logevent.TxIndex,
+		LastLogIndex: logevent.Index,
+	}
 
-	log.WithFields(log.Fields{
-		"block/tx/log": fmt.Sprintf("%v/%v/%v", globals.LastBlock, globals.LastTxIndex, globals.LastLogIndex),
-	}).Debug("SAVEP save")
-
-	return s.storage.SetGlobals(*globals)
+	return s.storage.SetSavePoint(s.networkid, sp)
 }
 
 func (s *savePoint) SkipTx(txid common.Hash) (bool, error) {

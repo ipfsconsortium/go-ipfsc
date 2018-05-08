@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -13,17 +14,19 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ipfsconsortium/gipc/eth"
 
 	log "github.com/sirupsen/logrus"
 )
 
-type EventHandlerFunc func(*types.Log) error
+type EventHandlerFunc func(*types.Log, *ScanEventHandler) error
 
-type scanEventHandler struct {
-	Address        common.Address
-	EventSignature string
-	Topic          string
-	Handler        EventHandlerFunc
+type ScanEventHandler struct {
+	Address   common.Address
+	EventName string
+	Topic     string
+	Handler   EventHandlerFunc
+	UserData  interface{}
 }
 
 type ScanEventDispatcher struct {
@@ -31,12 +34,11 @@ type ScanEventDispatcher struct {
 
 	client *ethclient.Client
 
-	eventHandlers []scanEventHandler
-
-	savepoint *savePoint
+	eventHandlers []ScanEventHandler
+	savepoint     *savePoint
 
 	block    *types.Block
-	receipts *receiptDownloader
+	receipts *eth.ReceiptDownloader
 
 	terminatech  chan interface{}
 	terminatedch chan interface{}
@@ -52,7 +54,7 @@ func NewScanEventDispatcher(client *ethclient.Client, savepoint *savePoint) *Sca
 		client:    client,
 		savepoint: savepoint,
 
-		receipts: newReceiptDownloader(client, 10),
+		receipts: eth.NewReceiptDownloader(client, 3),
 
 		terminatech:  make(chan interface{}),
 		terminatedch: make(chan interface{}),
@@ -61,7 +63,7 @@ func NewScanEventDispatcher(client *ethclient.Client, savepoint *savePoint) *Sca
 
 // Register registers a function to be called on event emission. Call NotifyUpdate if this is done
 //   when everything started
-func (e *ScanEventDispatcher) RegisterHandler(address common.Address, abi *abi.ABI, event string, handler EventHandlerFunc) {
+func (e *ScanEventDispatcher) RegisterHandler(address common.Address, abi *abi.ABI, event string, handler EventHandlerFunc, userdata interface{}) {
 
 	abievent, ok := abi.Events[event]
 	if !ok {
@@ -69,11 +71,12 @@ func (e *ScanEventDispatcher) RegisterHandler(address common.Address, abi *abi.A
 	}
 	topicID := abievent.Id()
 
-	eventHandler := scanEventHandler{
-		Address:        address,
-		EventSignature: abievent.String(),
-		Topic:          "0x" + hex.EncodeToString(topicID[:]),
-		Handler:        handler,
+	eventHandler := ScanEventHandler{
+		Address:   address,
+		EventName: event,
+		Topic:     "0x" + hex.EncodeToString(topicID[:]),
+		Handler:   handler,
+		UserData:  userdata,
 	}
 
 	e.Lock()
@@ -81,11 +84,26 @@ func (e *ScanEventDispatcher) RegisterHandler(address common.Address, abi *abi.A
 	e.Unlock()
 }
 
+func (e *ScanEventDispatcher) UnregisterHandler(address common.Address, event string) {
+
+	e.Lock()
+	defer e.Unlock()
+
+	for i, handler := range e.eventHandlers {
+		if bytes.Equal(handler.Address[:], address[:]) && handler.EventName == event {
+			e.eventHandlers[i] = e.eventHandlers[len(e.eventHandlers)-1]
+			e.eventHandlers = e.eventHandlers[:len(e.eventHandlers)-1]
+			return
+		}
+	}
+
+}
+
 func (e *ScanEventDispatcher) runHandlerFor(logevent *types.Log) error {
 
 	if !logevent.Removed {
 
-		var handler *scanEventHandler
+		var handler *ScanEventHandler
 		e.Lock()
 		for _, v := range e.eventHandlers {
 			if logevent.Address == v.Address && logevent.Topics[0].Hex() == v.Topic {
@@ -96,8 +114,8 @@ func (e *ScanEventDispatcher) runHandlerFor(logevent *types.Log) error {
 		e.Unlock()
 
 		if handler != nil {
-			log.WithField("event", handler.EventSignature).Debug("EVENT run handler ")
-			return handler.Handler(logevent)
+			log.WithField("event", handler.EventName).Debug("EVENT run handler ")
+			return handler.Handler(logevent, handler)
 		}
 	}
 
@@ -119,7 +137,7 @@ func (e *ScanEventDispatcher) process() (bool, error) {
 
 	log.WithFields(log.Fields{
 		"block/tx/log": fmt.Sprintf("%v/%v/%v", e.nextBlock, e.nextTxIndex, e.nextLogIndex),
-	}).Debug("EVENT scanning")
+	}).Info("EVENT scanning")
 
 	// Check if e.block is valid, if not download it.
 	if e.block == nil || e.block.NumberU64() < e.nextBlock {
@@ -218,28 +236,28 @@ func (e *ScanEventDispatcher) Start() {
 
 	go func() {
 		e.receipts.Start()
-		for true {
+		loop := true
+		for loop {
 			select {
 
 			case <-e.terminatech:
 				log.Debug("EVENT Dispatching terminatech")
-				e.terminatedch <- nil
-				e.receipts.Stop()
-				e.receipts.Join()
-				return
+				loop = false
+				break
 
 			default:
 				wait, err := e.process()
 				if err != nil {
-					go func() {
-						log.Error("EVENT Failed ", err)
-						e.terminatech <- nil
-					}()
+					log.Error("EVENT Failed ", err)
+					loop = false
 				} else if wait {
 					time.Sleep(4 * time.Second)
 				}
 			}
 		}
+		e.terminatedch <- nil
+		e.receipts.Stop()
+		e.receipts.Join()
 
 	}()
 }

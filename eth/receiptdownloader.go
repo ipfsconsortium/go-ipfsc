@@ -1,4 +1,4 @@
-package service
+package eth
 
 import (
 	"bytes"
@@ -24,7 +24,7 @@ const (
 )
 
 // receiptTask is a single receipt download task.
-type receiptTask struct {
+type ReceiptTask struct {
 	Tx     common.Hash
 	result chan error
 
@@ -34,27 +34,27 @@ type receiptTask struct {
 }
 
 // receiptDownloader allows to download multiple receipts at the same time.
-type receiptDownloader struct {
+type ReceiptDownloader struct {
 	sync.Mutex
 
 	client *ethclient.Client
 
 	concurrency int
-	queue       []*receiptTask
-	pending     map[common.Hash]*receiptTask
+	queue       []*ReceiptTask
+	pending     map[common.Hash]*ReceiptTask
 
 	nextch       chan interface{}
 	terminatech  chan interface{}
 	terminatedch chan interface{}
 }
 
-func newReceiptDownloader(client *ethclient.Client, concurrency int) *receiptDownloader {
+func NewReceiptDownloader(client *ethclient.Client, concurrency int) *ReceiptDownloader {
 
-	return &receiptDownloader{
+	return &ReceiptDownloader{
 		concurrency:  concurrency,
 		client:       client,
-		queue:        []*receiptTask{},
-		pending:      make(map[common.Hash]*receiptTask),
+		queue:        []*ReceiptTask{},
+		pending:      make(map[common.Hash]*ReceiptTask),
 		nextch:       make(chan interface{}, concurrency),
 		terminatech:  make(chan interface{}),
 		terminatedch: make(chan interface{}),
@@ -63,9 +63,9 @@ func newReceiptDownloader(client *ethclient.Client, concurrency int) *receiptDow
 }
 
 // Request to download a transaction.
-func (r *receiptDownloader) Request(txid common.Hash) {
+func (r *ReceiptDownloader) Request(txid common.Hash) {
 	r.Lock()
-	r.queue = append(r.queue, &receiptTask{
+	r.queue = append(r.queue, &ReceiptTask{
 		Tx:     txid,
 		result: make(chan error),
 	})
@@ -75,7 +75,7 @@ func (r *receiptDownloader) Request(txid common.Hash) {
 }
 
 // Get the requested transaction, if not still downloaded, it waits.
-func (r *receiptDownloader) Get(txid common.Hash) (*types.Receipt, error) {
+func (r *ReceiptDownloader) Get(txid common.Hash) (*types.Receipt, error) {
 
 	// Get the task from the pending list, if not, look is is still queued.
 	r.Lock()
@@ -105,7 +105,7 @@ func (r *receiptDownloader) Get(txid common.Hash) (*types.Receipt, error) {
 }
 
 // Forget (deletes) an already downloaded transaction.
-func (r *receiptDownloader) Forget(txid common.Hash) {
+func (r *ReceiptDownloader) Forget(txid common.Hash) {
 	r.Lock()
 	if _, exists := r.pending[txid]; exists {
 		delete(r.pending, txid)
@@ -116,7 +116,7 @@ func (r *receiptDownloader) Forget(txid common.Hash) {
 }
 
 // Stats retrieves the status.
-func (r *receiptDownloader) Stats() (queuelen, pendinglen int) {
+func (r *ReceiptDownloader) Stats() (queuelen, pendinglen int) {
 	r.Lock()
 	queuelen = len(r.queue)
 	pendinglen = len(r.pending)
@@ -126,7 +126,7 @@ func (r *receiptDownloader) Stats() (queuelen, pendinglen int) {
 }
 
 // next tryies to process next item to download, if possible.
-func (r *receiptDownloader) next() {
+func (r *ReceiptDownloader) next() {
 
 	// Get the next receipt to download, if does not reach maximum concurrency.
 	r.Lock()
@@ -182,19 +182,19 @@ func (r *receiptDownloader) next() {
 }
 
 // Stop processing requests
-func (r *receiptDownloader) Stop() {
+func (r *ReceiptDownloader) Stop() {
 	go func() {
 		r.terminatech <- nil
 	}()
 }
 
 // Join waits until all background jobs stopped
-func (r *receiptDownloader) Join() {
+func (r *ReceiptDownloader) Join() {
 	<-r.terminatedch
 }
 
 // Start processing requests
-func (r *receiptDownloader) Start() {
+func (r *ReceiptDownloader) Start() {
 
 	go func() {
 		for true {
@@ -214,3 +214,39 @@ func (r *receiptDownloader) Start() {
 		r.terminatedch <- nil
 	}()
 }
+
+/*
+func Test(cmd *cobra.Command, args []string) {
+
+	client, err := ethclient.Dial("http://localhost:8545")
+	must(err)
+	download := service.NewReceiptDownloader(client, 20)
+	download.Start()
+
+	startblock := 4000000
+	for blockno := startblock; blockno < startblock+5000; blockno++ {
+		block, err := client.BlockByNumber(context.TODO(), big.NewInt(int64(blockno)))
+		must(err)
+		if len(block.Transactions()) == 0 {
+			continue
+		}
+		for _, tx := range block.Transactions() {
+			download.Request(tx.Hash())
+		}
+		for _, tx := range block.Transactions() {
+			_, err := download.Get(tx.Hash())
+			must(err)
+			download.Forget(tx.Hash())
+		}
+		queuelen, pendinglen := download.Stats()
+		log.Info("Downloaded block ", blockno, " ",
+			block.Transactions().Len(),
+			" len(queue)=", queuelen,
+			" len(pending)=", pendinglen,
+		)
+	}
+	download.QueryStop()
+	download.WaitStopped()
+
+}
+*/
