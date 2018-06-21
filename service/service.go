@@ -68,7 +68,7 @@ func (s *Service) syncConsortiumManifest(member string, m *consortiumManifest, q
 	}
 }
 
-func (s *Service) syncPinningManifest(member string, m *pinningManifest, quotum *int) error {
+func (s *Service) syncPinningManifest(member string, m *pinningManifest, quotum *int) {
 
 	for _, ipfshash := range m.Pin {
 		s.addHash(member, ipfshash)
@@ -96,9 +96,9 @@ func (s *Service) syncEnsName(ensname string, quotum *int) error {
 
 	switch v := manifest.(type) {
 	case *consortiumManifest:
-		s.syncConsortiumManifest(ensname, manifest.(*consortiumManifest), quotum)
+		s.syncConsortiumManifest(ensname, v, quotum)
 	case *pinningManifest:
-		s.syncPinningManifest(ensname, manifest.(*pinningManifest), quotum)
+		s.syncPinningManifest(ensname, v, quotum)
 	default:
 		return fmt.Errorf("Unknown manifest type")
 	}

@@ -7,7 +7,7 @@ import (
 )
 
 // AddHash to the storage.
-func (s *Storage) AddHash(member string, hash string, ttl, size uint) error {
+func (s *Storage) AddHash(member string, hash string, size uint) error {
 
 	batch := new(leveldb.Batch)
 
