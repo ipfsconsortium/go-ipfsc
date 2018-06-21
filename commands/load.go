@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"sync"
 
 	cfg "github.com/ipfsconsortium/gipc/config"
@@ -68,7 +67,7 @@ func loadEthClients() error {
 
 	ethclients = make(map[uint64]*ethclient.Client)
 
-	for _, network := range cfg.C.Networks {
+	for networkid, network := range cfg.C.Networks {
 
 		log.WithField("network", network.RPCURL).Info("Checking network.")
 
@@ -77,16 +76,16 @@ func loadEthClients() error {
 			return err
 		}
 
-		networkid, err := client.NetworkID(context.Background())
+		clientnetworkid, err := client.NetworkID(context.Background())
 		if err != nil {
 			return err
 		}
 
-		if networkid.Uint64() != network.NetworkID {
-			return fmt.Errorf("NetworkID RPC return a different networkid", network.NetworkID)
+		if clientnetworkid.Uint64() != networkid {
+			return fmt.Errorf("NetworkID RPC return a different networkid", networkid)
 		}
 
-		ethclients[network.NetworkID] = client
+		ethclients[networkid] = client
 
 	}
 
@@ -115,7 +114,7 @@ func loadContract() error {
 	// crete web3 client & get info
 
 	client, err := eth.NewWeb3Client(
-		ethclients[cfg.C.Contracts.IPFSProxy.NetworkID],
+		ethclients[cfg.C.EnsNames.Network],
 		ks,
 		account,
 	)
@@ -136,20 +135,21 @@ func loadContract() error {
 	}).Info("Account loaded from keystore")
 
 	// create the contract
+	/*
+		resp, err := http.Get(cfg.C.Contracts.IPFSProxy.JSONURL)
+		if err != nil {
+			return err
+		}
 
-	resp, err := http.Get(cfg.C.Contracts.IPFSProxy.JSONURL)
-	if err != nil {
-		return err
-	}
+		defer resp.Body.Close()
 
-	defer resp.Body.Close()
-
-	if cfg.C.Contracts.IPFSProxy.Address != "" {
-		address := common.HexToAddress(cfg.C.Contracts.IPFSProxy.Address)
-		proxy, err = eth.NewContractFromJson(client, resp.Body, &address)
-	} else {
-		proxy, err = eth.NewContractFromJson(client, resp.Body, nil)
-	}
+		if cfg.C.Contracts.IPFSProxy.Address != "" {
+			address := common.HexToAddress(cfg.C.Contracts.IPFSProxy.Address)
+			proxy, err = eth.NewContractFromJson(client, resp.Body, &address)
+		} else {
+			proxy, err = eth.NewContractFromJson(client, resp.Body, nil)
+		}
+	*/
 
 	return err
 

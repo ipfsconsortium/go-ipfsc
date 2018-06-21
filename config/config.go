@@ -1,11 +1,5 @@
 package gometh
 
-import (
-	"fmt"
-
-	"github.com/ethereum/go-ethereum/common"
-)
-
 // C is the package config
 var C Config
 
@@ -17,38 +11,22 @@ type Config struct {
 		Passwd  string
 	}
 
-	Contracts struct {
-		IPFSProxy struct {
-			NetworkID uint64
-			JSONURL   string
-			Address   string
-			Deploy    struct {
-				Members      []string
-				Required     uint
-				PersistLimit uint64
-			}
-		}
+	EnsNames struct {
+		Network uint64
+		Local   string
+		Remotes []string
 	}
 
 	DB struct {
 		Path string
 	}
+
 	IPFS struct {
 		APIURL string
 	}
 
-	Networks []struct {
-		NetworkID  uint64
-		RPCURL     string
-		StartBlock uint64
+	Networks map[uint64]struct {
+		EnsRoot string
+		RPCURL  string
 	}
-}
-
-func (c *Config) Verify() error {
-
-	if !common.IsHexAddress(c.Contracts.IPFSProxy.Address) {
-		return fmt.Errorf("Bad Address %v", c.Contracts.IPFSProxy.Address)
-	}
-	return nil
-
 }
