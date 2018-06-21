@@ -12,7 +12,7 @@ import (
 
 const (
 	prefixHash      = "H"
-	prefixContract  = "C"
+	prefixMember    = "C"
 	prefixGlobals   = "G"
 	prefixSkipTx    = "S"
 	prefixMetadata  = "M"

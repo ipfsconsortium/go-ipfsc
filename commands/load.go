@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	cfg "github.com/ipfsconsortium/gipc/config"
 	eth "github.com/ipfsconsortium/gipc/eth"
@@ -20,19 +19,25 @@ import (
 
 var (
 	ethclients map[uint64]*ethclient.Client
-	proxy      *eth.Contract
 	ipfs       *shell.Shell
 	storage    *sto.Storage
+	ens        *eth.ENSClient
 )
 
 func load(withStorage bool) error {
 
-	if proxy != nil {
+	if ipfs != nil {
 		// already initialized
 		return nil
 	}
 
 	var err error
+
+	if withStorage {
+		if err = loadStorage(); err != nil {
+			return err
+		}
+	}
 
 	if err = loadEthClients(); err != nil {
 		return err
@@ -40,14 +45,10 @@ func load(withStorage bool) error {
 	if err = loadIPFSClient(); err != nil {
 		return err
 	}
-	if err = loadContract(); err != nil {
+	if err = loadENS(); err != nil {
 		return err
 	}
-	if withStorage {
-		if err = loadStorage(); err != nil {
-			return err
-		}
-	}
+
 	return nil
 }
 
@@ -61,6 +62,28 @@ func loadStorage() error {
 
 }
 
+func loadENS() error {
+
+	ks := keystore.NewKeyStore(cfg.C.Keystore.Path, keystore.StandardScryptN, keystore.StandardScryptP)
+	account, err := ks.Find(accounts.Account{
+		Address: common.HexToAddress(cfg.C.Keystore.Account),
+	})
+	if err != nil {
+		return err
+	}
+
+	err = ks.Unlock(account, cfg.C.Keystore.Passwd)
+	if err != nil {
+		return err
+	}
+
+	ensClient := ethclients[cfg.C.EnsNames.Network]
+	ensAddr := common.HexToAddress(cfg.C.Networks[cfg.C.EnsNames.Network].EnsRoot)
+
+	web3 := eth.NewWeb3Client(ensClient, ks, &account)
+	ens, err = eth.NewENSClient(web3, &ensAddr)
+	return err
+}
 func loadEthClients() error {
 
 	// load all clients
@@ -69,7 +92,7 @@ func loadEthClients() error {
 
 	for networkid, network := range cfg.C.Networks {
 
-		log.WithField("network", network.RPCURL).Info("Checking network.")
+		log.WithField("url", network.RPCURL).Info("Checking WEB3.")
 
 		client, err := ethclient.Dial(network.RPCURL)
 		if err != nil {
@@ -92,70 +115,9 @@ func loadEthClients() error {
 	return nil
 }
 
-func loadContract() error {
-
-	// load the keystore
-
-	var err error
-
-	ks := keystore.NewKeyStore(cfg.C.Keystore.Path, keystore.StandardScryptN, keystore.StandardScryptP)
-	account, err := ks.Find(accounts.Account{
-		Address: common.HexToAddress(cfg.C.Keystore.Account),
-	})
-	if err != nil {
-		return err
-	}
-
-	err = ks.Unlock(account, cfg.C.Keystore.Passwd)
-	if err != nil {
-		return err
-	}
-
-	// crete web3 client & get info
-
-	client, err := eth.NewWeb3Client(
-		ethclients[cfg.C.EnsNames.Network],
-		ks,
-		account,
-	)
-	if err != nil {
-		return err
-	}
-
-	client.ClientMutex = &sync.Mutex{}
-
-	balance, err := client.BalanceInfo()
-	if err != nil {
-		return err
-	}
-
-	log.WithFields(log.Fields{
-		"account": account.Address.Hex(),
-		"balance": balance,
-	}).Info("Account loaded from keystore")
-
-	// create the contract
-	/*
-		resp, err := http.Get(cfg.C.Contracts.IPFSProxy.JSONURL)
-		if err != nil {
-			return err
-		}
-
-		defer resp.Body.Close()
-
-		if cfg.C.Contracts.IPFSProxy.Address != "" {
-			address := common.HexToAddress(cfg.C.Contracts.IPFSProxy.Address)
-			proxy, err = eth.NewContractFromJson(client, resp.Body, &address)
-		} else {
-			proxy, err = eth.NewContractFromJson(client, resp.Body, nil)
-		}
-	*/
-
-	return err
-
-}
-
 func loadIPFSClient() error {
+	log.WithField("url", cfg.C.IPFS.APIURL).Info("Checking IPFS.")
+
 	ipfs = shell.NewShell(cfg.C.IPFS.APIURL)
 	if !ipfs.IsUp() {
 		return fmt.Errorf("Cannot connect with local IPFS node")

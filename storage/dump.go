@@ -37,18 +37,17 @@ func (s *Storage) Dump(w io.Writer) {
 			}
 
 			w.Write([]byte(fmt.Sprintf(" size=%v\n", entry.DataSize)))
-			for _, contract := range entry.Contracts {
-				w.Write([]byte(fmt.Sprintf("| CONTRACT %v\n", contract.Address.Hex())))
+			for _, member := range entry.Members {
+				w.Write([]byte(fmt.Sprintf("| MEMBER %v\n", member)))
 			}
 
-		case isPrefix(key, prefixContract):
+		case isPrefix(key, prefixMember):
 
-			var contract common.Address
-			copy(contract[:], key[len(prefixContract):])
+			member := string(key[len(prefixMember):])
 
-			w.Write([]byte(fmt.Sprintf("CONTRACT %v", contract.Hex())))
+			w.Write([]byte(fmt.Sprintf("MEMBER %v", member)))
 
-			var entry ContractEntry
+			var entry MemberEntry
 			err := rlp.DecodeBytes(value, &entry)
 			if err != nil {
 				w.Write([]byte("| *READ ERROR"))

@@ -1,20 +1,11 @@
 package storage
 
-import (
-	common "github.com/ethereum/go-ethereum/common"
-)
-
-type HashContractEntry struct {
-	Address common.Address
-	Ttl     uint
-}
-
 type HashEntry struct {
-	Contracts []HashContractEntry
-	DataSize  uint
+	Members  []string
+	DataSize uint
 }
 
-type ContractEntry struct {
+type MemberEntry struct {
 	HashCount uint
 }
 

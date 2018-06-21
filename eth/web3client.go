@@ -30,13 +30,13 @@ var (
 type Web3Client struct {
 	ClientMutex    *sync.Mutex
 	Client         *ethclient.Client
-	Account        accounts.Account
+	Account        *accounts.Account
 	Ks             *keystore.KeyStore
 	ReceiptTimeout time.Duration
 }
 
 // NewWeb3Client creates a client, using a keystore and an account for transactions
-func NewWeb3ClientWithURL(rpcURL string, ks *keystore.KeyStore, account accounts.Account) (*Web3Client, error) {
+func NewWeb3ClientWithURL(rpcURL string, ks *keystore.KeyStore, account *accounts.Account) (*Web3Client, error) {
 
 	var err error
 
@@ -54,14 +54,14 @@ func NewWeb3ClientWithURL(rpcURL string, ks *keystore.KeyStore, account accounts
 }
 
 // NewWeb3Client creates a client, using a keystore and an account for transactions
-func NewWeb3Client(client *ethclient.Client, ks *keystore.KeyStore, account accounts.Account) (*Web3Client, error) {
+func NewWeb3Client(client *ethclient.Client, ks *keystore.KeyStore, account *accounts.Account) *Web3Client {
 
 	return &Web3Client{
 		Client:         client,
 		Ks:             ks,
 		Account:        account,
 		ReceiptTimeout: 120 * time.Second,
-	}, nil
+	}
 }
 
 // BalanceInfo retieves information about the default account
@@ -140,7 +140,7 @@ func (w *Web3Client) SendTransactionSync(to *common.Address, value *big.Int, gas
 		)
 	}
 
-	if tx, err = w.Ks.SignTx(w.Account, tx, network); err != nil {
+	if tx, err = w.Ks.SignTx(*w.Account, tx, network); err != nil {
 		return nil, nil, err
 	}
 
@@ -196,7 +196,7 @@ func (w *Web3Client) Sign(data ...[]byte) ([3][32]byte, error) {
 	var ret [3][32]byte
 
 	// The produced signature is in the [R || S || V] format where V is 0 or 1.
-	sig, err := w.Ks.SignHash(w.Account, prefixedHash)
+	sig, err := w.Ks.SignHash(*w.Account, prefixedHash)
 	if err != nil {
 		return ret, err
 	}

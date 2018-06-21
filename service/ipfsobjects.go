@@ -14,7 +14,7 @@ type configBase struct {
 	Type string `json:"type"`
 }
 
-type consortium struct {
+type consortiumManifest struct {
 	configBase
 	Quotum  string `json:"quotum"`
 	Members []struct {
@@ -23,7 +23,7 @@ type consortium struct {
 	}
 }
 
-type manifest struct {
+type pinningManifest struct {
 	configBase
 	Pin []string `json:"pin"`
 }
@@ -34,15 +34,16 @@ func parseManifest(data []byte) (interface{}, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
+
 	switch cfg.Type {
 	case consortiumType:
-		var t consortium
+		var t consortiumManifest
 		if err := json.Unmarshal(data, &t); err != nil {
 			return nil, err
 		}
 		return &t, nil
 	case manifestType:
-		var t manifest
+		var t pinningManifest
 		if err := json.Unmarshal(data, &t); err != nil {
 			return nil, err
 		}

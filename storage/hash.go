@@ -1,20 +1,19 @@
 package storage
 
 import (
-	common "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 	log "github.com/sirupsen/logrus"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
 // AddHash to the storage.
-func (s *Storage) AddHash(address common.Address, hash string, ttl, size uint) error {
+func (s *Storage) AddHash(member string, hash string, ttl, size uint) error {
 
 	batch := new(leveldb.Batch)
 
 	// update hash
 
-	hkey, hvalue, update, err := s.addHashKV(address, hash, ttl, size)
+	hkey, hvalue, update, err := s.addHashKV(member, hash, size)
 	if err != nil {
 		return err
 	}
@@ -26,17 +25,17 @@ func (s *Storage) AddHash(address common.Address, hash string, ttl, size uint) e
 
 	if update {
 
-		// update contract
+		// update member
 
-		contract, err := s.Contract(address)
+		memberdata, err := s.Member(member)
 
 		if err != nil {
 			return err
 		}
 
-		contract.HashCount++
+		memberdata.HashCount++
 
-		ckey, cvalue, err := s.contractKV(&address, contract)
+		ckey, cvalue, err := s.memberKV(&member, memberdata)
 		if err != nil {
 			return err
 		}
@@ -60,7 +59,7 @@ func (s *Storage) AddHash(address common.Address, hash string, ttl, size uint) e
 }
 
 // RemoveHash from the storage.
-func (s *Storage) RemoveHash(contract common.Address, hash string) (bool, error) {
+func (s *Storage) RemoveHash(member string, hash string) (bool, error) {
 
 	key := append([]byte(prefixHash), []byte(hash)...)
 	var entry HashEntry
@@ -78,18 +77,18 @@ func (s *Storage) RemoveHash(contract common.Address, hash string) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	var contractOffet int = -1
-	for i, v := range entry.Contracts {
-		if v.Address == contract {
-			contractOffet = i
+	var memberOffet int = -1
+	for i, m := range entry.Members {
+		if member == m {
+			memberOffet = i
 			break
 		}
 	}
-	if contractOffet == -1 {
+	if memberOffet == -1 {
 		// contract is not in this hash, return
 		return false, nil
 	}
-	if len(entry.Contracts) == 1 {
+	if len(entry.Members) == 1 {
 		// the only contract with this hash, delete all entry, return
 		log.WithField("Hash", hash).Debug("DB Remove hash entry, hash removed")
 
@@ -97,8 +96,8 @@ func (s *Storage) RemoveHash(contract common.Address, hash string) (bool, error)
 	}
 
 	// remove the contract in hash & save
-	entry.Contracts[contractOffet] = entry.Contracts[len(entry.Contracts)-1]
-	entry.Contracts = entry.Contracts[:len(entry.Contracts)-1]
+	entry.Members[memberOffet] = entry.Members[len(entry.Members)-1]
+	entry.Members = entry.Members[:len(entry.Members)-1]
 
 	value, err = rlp.EncodeToBytes(entry)
 	if err != nil {
@@ -109,7 +108,7 @@ func (s *Storage) RemoveHash(contract common.Address, hash string) (bool, error)
 	return false, s.db.Put(key, value, nil)
 }
 
-func (s *Storage) addHashKV(contract common.Address, hash string, ttl, size uint) (key, value []byte, update bool, err error) {
+func (s *Storage) addHashKV(member string, hash string, size uint) (key, value []byte, update bool, err error) {
 
 	key = append([]byte(prefixHash), []byte(hash)...)
 
@@ -126,36 +125,18 @@ func (s *Storage) addHashKV(contract common.Address, hash string, ttl, size uint
 			return nil, nil, false, errInconsistentSize
 		}
 
-		var contractEntry *HashContractEntry
-		for i, v := range entry.Contracts {
-			if v.Address == contract {
-				contractEntry = &entry.Contracts[i]
+		exists := false
+		for _, m := range entry.Members {
+			if m == member {
+				exists = true
 				break
 			}
 		}
-		if contractEntry != nil {
-
-			if contractEntry.Ttl == ttl {
-				// exactly the same ttl for hash contract, return
-				log.WithField("hash", hash).Debug("DB Entry already exists.")
-				return nil, nil, false, err
-			}
-
-			// update TTL for existing hash in contract
-			log.WithField("hash", hash).Debug("DB Updating TTL of hash")
-			contractEntry.Ttl = ttl
-			update = false
-
-		} else {
-
-			// add a new contract
+		if !exists {
+			// add a new member
 			log.WithField("hash", hash).Debug("DB Adding contract to hash.")
-			entry.Contracts = append(entry.Contracts, HashContractEntry{
-				Address: contract,
-				Ttl:     ttl,
-			})
+			entry.Members = append(entry.Members, member)
 			update = true
-
 		}
 	} else {
 
@@ -163,12 +144,7 @@ func (s *Storage) addHashKV(contract common.Address, hash string, ttl, size uint
 		log.WithField("hash", hash).Debug("DB Adding new hash.")
 
 		entry = HashEntry{
-			Contracts: []HashContractEntry{
-				HashContractEntry{
-					Address: contract,
-					Ttl:     ttl,
-				},
-			},
+			Members:  []string{member},
 			DataSize: size,
 		}
 		update = true

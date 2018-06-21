@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	log "github.com/sirupsen/logrus"
 )
 
 const ensEthNameServiceAbi string = `
@@ -54,18 +55,18 @@ type ENSClient struct {
 
 func NewENSClient(client *Web3Client, address *common.Address) (*ENSClient, error) {
 
-	abireader := bytes.NewReader([]byte(ensEthNameServiceAbi))
-	root, err := NewContractFromJson(client, abireader, address)
+	rootabi, err := abi.JSON(bytes.NewReader([]byte(ensEthNameServiceAbi)))
+	root, err := NewContract(client, &rootabi, nil, address)
 
-	resolver, err := abi.JSON(bytes.NewReader([]byte(ensResolverAbi)))
+	resolverabi, err := abi.JSON(bytes.NewReader([]byte(ensResolverAbi)))
 	if err != nil {
 		return nil, err
 	}
 
-	return &ENSClient{root, resolver}, err
+	return &ENSClient{root, resolverabi}, err
 }
 
-func (e *ENSClient) GetText(name string) (string, error) {
+func (e *ENSClient) GetText(name, key string) (string, error) {
 
 	namehash := NameHash(name)
 
@@ -73,16 +74,16 @@ func (e *ENSClient) GetText(name string) (string, error) {
 	if err := e.root.Call(&addr, "resolver", namehash); err != nil {
 		return "", err
 	}
-
+	log.Debug("ENS ", name, " key is ", namehash.Hex(), " => resolver ", addr.Hex())
 	resolver, err := NewContract(e.root.client, &e.resolver, nil, &addr)
 	if err != nil {
 		return "", err
 	}
 
 	var text string
-	if err := resolver.Call(&text, "text", namehash); err != nil {
+	if err := resolver.Call(&text, "text", namehash, key); err != nil {
 		return "", err
 	}
 
-	return "", nil
+	return text, nil
 }
