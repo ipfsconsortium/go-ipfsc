@@ -26,7 +26,8 @@ type Config struct {
 	}
 
 	Networks map[uint64]struct {
-		EnsRoot string
-		RPCURL  string
+		MaxGasPrice uint64
+		EnsRoot     string
+		RPCURL      string
 	}
 }

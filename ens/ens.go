@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	eth "github.com/ipfsconsortium/gipc/eth"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -49,14 +50,14 @@ func NameHash(name string) common.Hash {
 }
 
 type ENSClient struct {
-	root     *Contract
+	root     *eth.Contract
 	resolver abi.ABI
 }
 
-func NewENSClient(client *Web3Client, address *common.Address) (*ENSClient, error) {
+func New(client *eth.Web3Client, address *common.Address) (*ENSClient, error) {
 
 	rootabi, err := abi.JSON(bytes.NewReader([]byte(ensEthNameServiceAbi)))
-	root, err := NewContract(client, &rootabi, nil, address)
+	root, err := eth.NewContract(client, &rootabi, nil, address)
 
 	resolverabi, err := abi.JSON(bytes.NewReader([]byte(ensResolverAbi)))
 	if err != nil {
@@ -66,7 +67,28 @@ func NewENSClient(client *Web3Client, address *common.Address) (*ENSClient, erro
 	return &ENSClient{root, resolverabi}, err
 }
 
-func (e *ENSClient) GetText(name, key string) (string, error) {
+func (e *ENSClient) Info(name string) (string, error) {
+
+	info := ""
+
+	namehash := NameHash(name)
+
+	var resolverAddr common.Address
+	var ownerAddr common.Address
+	if err := e.root.Call(&resolverAddr, "resolver", namehash); err != nil {
+		return "", err
+	}
+	if err := e.root.Call(&ownerAddr, "owner", namehash); err != nil {
+		return "", err
+	}
+
+	info += "ENS-Owner: " + ownerAddr.Hex()
+	info += "\nENS-Resolver: " + resolverAddr.Hex()
+
+	return info, nil
+}
+
+func (e *ENSClient) Text(name, key string) (string, error) {
 
 	namehash := NameHash(name)
 
@@ -75,7 +97,7 @@ func (e *ENSClient) GetText(name, key string) (string, error) {
 		return "", err
 	}
 	log.Debug("ENS ", name, " key is ", namehash.Hex(), " => resolver ", addr.Hex())
-	resolver, err := NewContract(e.root.client, &e.resolver, nil, &addr)
+	resolver, err := eth.NewContract(e.root.Client(), &e.resolver, nil, &addr)
 	if err != nil {
 		return "", err
 	}
@@ -85,5 +107,29 @@ func (e *ENSClient) GetText(name, key string) (string, error) {
 		return "", err
 	}
 
+	log.Debug("ENS ", name, ":", name, " => ", text)
 	return text, nil
+
+}
+
+func (e *ENSClient) SetText(name, key, text string) error {
+
+	namehash := NameHash(name)
+
+	var addr common.Address
+	if err := e.root.Call(&addr, "resolver", namehash); err != nil {
+		return err
+	}
+	log.Debug("ENS ", name, " key is ", namehash.Hex(), " => resolver ", addr.Hex())
+	resolver, err := eth.NewContract(e.root.Client(), &e.resolver, nil, &addr)
+	if err != nil {
+		return err
+	}
+
+	_, _, err = resolver.SendTransactionSync(nil, 0, "setText", namehash, key, text)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

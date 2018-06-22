@@ -3,9 +3,12 @@ package commands
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	cfg "github.com/ipfsconsortium/gipc/config"
+	ens "github.com/ipfsconsortium/gipc/ens"
 	eth "github.com/ipfsconsortium/gipc/eth"
+	ipfsclient "github.com/ipfsconsortium/gipc/ipfsc"
 	sto "github.com/ipfsconsortium/gipc/storage"
 	log "github.com/sirupsen/logrus"
 
@@ -19,14 +22,13 @@ import (
 
 var (
 	ethclients map[uint64]*ethclient.Client
-	ipfs       *shell.Shell
+	ipfsc      *ipfsclient.Ipfsc
 	storage    *sto.Storage
-	ens        *eth.ENSClient
 )
 
 func load(withStorage bool) error {
 
-	if ipfs != nil {
+	if ipfsc != nil {
 		// already initialized
 		return nil
 	}
@@ -42,14 +44,9 @@ func load(withStorage bool) error {
 	if err = loadEthClients(); err != nil {
 		return err
 	}
-	if err = loadIPFSClient(); err != nil {
-		return err
-	}
-	if err = loadENS(); err != nil {
-		return err
-	}
 
-	return nil
+	return loadIPFSC()
+
 }
 
 func loadStorage() error {
@@ -62,7 +59,9 @@ func loadStorage() error {
 
 }
 
-func loadENS() error {
+func loadIPFSC() error {
+
+	// load ens.
 
 	ks := keystore.NewKeyStore(cfg.C.Keystore.Path, keystore.StandardScryptN, keystore.StandardScryptP)
 	account, err := ks.Find(accounts.Account{
@@ -81,9 +80,27 @@ func loadENS() error {
 	ensAddr := common.HexToAddress(cfg.C.Networks[cfg.C.EnsNames.Network].EnsRoot)
 
 	web3 := eth.NewWeb3Client(ensClient, ks, &account)
-	ens, err = eth.NewENSClient(web3, &ensAddr)
-	return err
+	web3.ClientMutex = &sync.Mutex{}
+	ensclient, err := ens.New(web3, &ensAddr)
+	if err != nil {
+		return err
+	}
+
+	log.WithField("url", cfg.C.IPFS.APIURL).Info("Checking IPFS.")
+
+	// load ipfs
+
+	ipfs := shell.NewShell(cfg.C.IPFS.APIURL)
+	if !ipfs.IsUp() {
+		return fmt.Errorf("Cannot connect with local IPFS node")
+	}
+
+	ipfsc = ipfsclient.New(ipfs, ensclient)
+
+	return nil
+
 }
+
 func loadEthClients() error {
 
 	// load all clients
@@ -112,15 +129,5 @@ func loadEthClients() error {
 
 	}
 
-	return nil
-}
-
-func loadIPFSClient() error {
-	log.WithField("url", cfg.C.IPFS.APIURL).Info("Checking IPFS.")
-
-	ipfs = shell.NewShell(cfg.C.IPFS.APIURL)
-	if !ipfs.IsUp() {
-		return fmt.Errorf("Cannot connect with local IPFS node")
-	}
 	return nil
 }

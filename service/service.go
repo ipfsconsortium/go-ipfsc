@@ -3,24 +3,17 @@ package service
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"math/big"
-	"os"
-	"os/signal"
 	"strconv"
 
-	shell "github.com/adriamb/go-ipfs-api"
 	cfg "github.com/ipfsconsortium/gipc/config"
-	eth "github.com/ipfsconsortium/gipc/eth"
+	ipfsc "github.com/ipfsconsortium/gipc/ipfsc"
 	sto "github.com/ipfsconsortium/gipc/storage"
 	log "github.com/sirupsen/logrus"
 )
 
 type Service struct {
-	persistLimit *big.Int
-	ens          *eth.ENSClient
-	ipfs         *shell.Shell
-	storage      *sto.Storage
+	ipfsc   *ipfsc.Ipfsc
+	storage *sto.Storage
 }
 
 var (
@@ -29,18 +22,11 @@ var (
 	errReachedPersistLimit = errors.New("persistlimit reached")
 )
 
-func NewService(ens *eth.ENSClient, ipfs *shell.Shell, storage *sto.Storage) *Service {
-
-	return &Service{
-		ens:     ens,
-		ipfs:    ipfs,
-		storage: storage,
-	}
+func NewService(ipfsc *ipfsc.Ipfsc, storage *sto.Storage) *Service {
+	return &Service{ipfsc, storage}
 }
 
-func (s *Service) syncConsortiumManifest(member string, m *consortiumManifest, quotum *int) {
-
-	// TODO: check quotum
+func (s *Service) syncConsortiumManifest(member string, m *ipfsc.ConsortiumManifest, quotum *int) {
 
 	for _, member := range m.Members {
 
@@ -68,36 +54,42 @@ func (s *Service) syncConsortiumManifest(member string, m *consortiumManifest, q
 	}
 }
 
-func (s *Service) syncPinningManifest(member string, m *pinningManifest, quotum *int) {
+func (s *Service) syncPinningManifest(member string, m *ipfsc.PinningManifest, quotum *int) {
 
-	for _, ipfshash := range m.Pin {
-		s.addHash(member, ipfshash)
+	if quotum == nil {
+		localquotum, err := strconv.Atoi(m.Quotum)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"quotum": m.Quotum,
+				"err":    err,
+			}).Error("Invalid quota, unable to process")
+			return
+		}
+		quotum = &localquotum
+	}
+
+	for i, ipfshash := range m.Pin {
+		log.WithField("c", fmt.Sprintf("%v/%v", i, len(m.Pin))).Info("Processing manifest")
+		if err := s.addHash(member, ipfshash, *quotum); err != nil {
+			log.WithFields(log.Fields{
+				"hash": ipfshash,
+				"err":  err,
+			}).Error("Failed adding hash")
+		}
 	}
 }
 
 func (s *Service) syncEnsName(ensname string, quotum *int) error {
 
-	ipfshash, err := s.ens.GetText(ensname, "consortiumManifest")
-	if err != nil {
-		return err
-	}
-	reader, err := s.ipfs.Cat(ipfshash)
-	if err != nil {
-		return err
-	}
-	data, err := ioutil.ReadAll(reader)
-	if err != nil {
-		return err
-	}
-	manifest, err := parseManifest(data)
+	manifest, err := s.ipfsc.Read(ensname)
 	if err != nil {
 		return err
 	}
 
 	switch v := manifest.(type) {
-	case *consortiumManifest:
+	case *ipfsc.ConsortiumManifest:
 		s.syncConsortiumManifest(ensname, v, quotum)
-	case *pinningManifest:
+	case *ipfsc.PinningManifest:
 		s.syncPinningManifest(ensname, v, quotum)
 	default:
 		return fmt.Errorf("Unknown manifest type")
@@ -105,15 +97,17 @@ func (s *Service) syncEnsName(ensname string, quotum *int) error {
 	return nil
 }
 
-func (s *Service) addHash(member, ipfsHash string) error {
+func (s *Service) addHash(member, ipfsHash string, quotum int) error {
 
 	log.WithFields(log.Fields{
 		"hash": ipfsHash,
 	}).Info("SERVE addHash")
 
 	// get the size & pin
-	stats, err := s.ipfs.ObjectStat(ipfsHash)
+
+	stats, err := s.ipfsc.IPFS().ObjectStat(ipfsHash)
 	if err != nil {
+		log.WithError(err).Error("Failed to ipfs.ObjectStat")
 		return err
 	}
 
@@ -124,25 +118,24 @@ func (s *Service) addHash(member, ipfsHash string) error {
 
 	globals, err := s.storage.Globals()
 	if err != nil {
+		log.WithError(err).Error("Failed to get storage globals")
 		return err
 	}
 
-	requieredLimit := uint64(globals.CurrentQuota) + uint64(stats.DataSize)
-	if requieredLimit > s.persistLimit.Uint64() {
+	requieredLimit := int(globals.CurrentQuota) + int(stats.DataSize)
+	if requieredLimit > quotum {
 		log.WithFields(log.Fields{
 			"hash":      ipfsHash,
-			"current":   s.persistLimit,
+			"current":   globals.CurrentQuota,
 			"requiered": requieredLimit,
 		}).Error(errReachedPersistLimit)
 
 		return errReachedPersistLimit
 	}
-
-	err = s.ipfs.Pin(ipfsHash, false)
+	err = s.ipfsc.IPFS().Pin(ipfsHash, false)
 	if err != nil {
 		return err
 	}
-
 	log.WithFields(log.Fields{
 		"Hash": ipfsHash,
 	}).Debug("IPFS pinning ok")
@@ -174,7 +167,7 @@ func (s *Service) removeHash(member, ipfsHash string) error {
 
 	if isLastHash {
 		// is the last has registerer in a contract, unpin it
-		err = s.ipfs.Unpin(ipfsHash)
+		s.ipfsc.IPFS().Unpin(ipfsHash)
 		if err != nil {
 			log.Warn("IPFS says that hash ", ipfsHash, " is not pinned.")
 		}
@@ -183,7 +176,7 @@ func (s *Service) removeHash(member, ipfsHash string) error {
 	return nil
 }
 
-func (s *Service) serve(cancel chan os.Signal) {
+func (s *Service) serve() {
 	for _, name := range cfg.C.EnsNames.Remotes {
 		log.WithFields(log.Fields{
 			"ens":  name,
@@ -202,8 +195,6 @@ func (s *Service) serve(cancel chan os.Signal) {
 }
 
 func (s *Service) Serve() error {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	s.serve(c)
+	s.serve()
 	return nil
 }

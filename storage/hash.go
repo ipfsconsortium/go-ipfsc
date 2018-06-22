@@ -1,9 +1,12 @@
 package storage
 
 import (
+	"fmt"
+
 	"github.com/ethereum/go-ethereum/rlp"
 	log "github.com/sirupsen/logrus"
 	"github.com/syndtr/goleveldb/leveldb"
+	dberr "github.com/syndtr/goleveldb/leveldb/errors"
 )
 
 // AddHash to the storage.
@@ -15,6 +18,7 @@ func (s *Storage) AddHash(member string, hash string, size uint) error {
 
 	hkey, hvalue, update, err := s.addHashKV(member, hash, size)
 	if err != nil {
+		fmt.Println("--1")
 		return err
 	}
 	if hkey == nil {
@@ -30,13 +34,19 @@ func (s *Storage) AddHash(member string, hash string, size uint) error {
 		memberdata, err := s.Member(member)
 
 		if err != nil {
-			return err
+			if err != dberr.ErrNotFound {
+				fmt.Println("--2")
+				return err
+			}
+			memberdata = &MemberEntry{0}
 		}
 
 		memberdata.HashCount++
 
 		ckey, cvalue, err := s.memberKV(&member, memberdata)
 		if err != nil {
+			fmt.Println("--3")
+
 			return err
 		}
 		batch.Put(ckey, cvalue)
@@ -45,6 +55,8 @@ func (s *Storage) AddHash(member string, hash string, size uint) error {
 
 		globals, err := s.Globals()
 		if err != nil {
+			fmt.Println("--4")
+
 			return err
 		}
 		globals.CurrentQuota += size
@@ -119,9 +131,13 @@ func (s *Storage) addHashKV(member string, hash string, size uint) (key, value [
 
 		err := rlp.DecodeBytes(value, &entry)
 		if err != nil {
+			fmt.Println("--5")
+
 			return nil, nil, false, err
 		}
 		if size != entry.DataSize {
+			fmt.Println("--6")
+
 			return nil, nil, false, errInconsistentSize
 		}
 
@@ -134,7 +150,7 @@ func (s *Storage) addHashKV(member string, hash string, size uint) (key, value [
 		}
 		if !exists {
 			// add a new member
-			log.WithField("hash", hash).Debug("DB Adding contract to hash.")
+			log.WithField("hash", hash).Debug("DB Adding member to hash.")
 			entry.Members = append(entry.Members, member)
 			update = true
 		}

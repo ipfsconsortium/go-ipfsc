@@ -36,13 +36,6 @@ var serveCmd = &cobra.Command{
 	Run:   cmd.Serve,
 }
 
-var updateCmd = &cobra.Command{
-	Use:   "update",
-	Short: "update local ENS",
-	Long:  "Updated the local ENS with the current multihash",
-	Run:   cmd.Update,
-}
-
 var dbDumpCmd = &cobra.Command{
 	Use:   "db-dump",
 	Short: "Dumps the database",
@@ -55,6 +48,33 @@ var dbInitCmd = &cobra.Command{
 	Short: "Initializes the database",
 	Long:  "Initialized the database",
 	Run:   cmd.InitDb,
+}
+
+var ipfscInitCmd = &cobra.Command{
+	Use:   "ipfsc-init",
+	Short: "Initialize ipfsc",
+	Long:  "Initialize ipfsc",
+	Run:   cmd.IpfscInit,
+}
+
+var ipfscInfoCmd = &cobra.Command{
+	Use:   "info",
+	Short: "Info of local ens",
+	Long:  "Info of local ens",
+	Run:   cmd.IpfscInfo,
+}
+
+var ipfscAddCmd = &cobra.Command{
+	Use:   "add",
+	Short: "Add hash to IPFS",
+	Long:  "Add hash to IPFS",
+	Run:   cmd.IpfscAdd,
+}
+var ipfscRmCmd = &cobra.Command{
+	Use:   "rm",
+	Short: "Remove hash to IPFS",
+	Long:  "Remove hash to IPFS",
+	Run:   cmd.IpfscRemove,
 }
 
 // ExecuteCmd adds all child commands to the root command sets flags appropriately.
@@ -76,9 +96,14 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&verbose, "verbose", "INFO", "verbose level")
 
 	RootCmd.AddCommand(serveCmd)
-	RootCmd.AddCommand(updateCmd)
+
 	RootCmd.AddCommand(dbDumpCmd)
 	RootCmd.AddCommand(dbInitCmd)
+
+	RootCmd.AddCommand(ipfscInitCmd)
+	RootCmd.AddCommand(ipfscInfoCmd)
+	RootCmd.AddCommand(ipfscAddCmd)
+	RootCmd.AddCommand(ipfscRmCmd)
 
 }
 
