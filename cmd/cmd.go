@@ -36,48 +36,6 @@ var serveCmd = &cobra.Command{
 	Run:   cmd.Serve,
 }
 
-var deployProxyCmd = &cobra.Command{
-	Use:   "proxy-deploy",
-	Short: "Deploy the proxy smartcontract (send transaction)",
-	Long:  "Deploy the proxy smartcontract",
-	Run:   cmd.DeployProxy,
-}
-
-var hashAddCmd = &cobra.Command{
-	Use:   "hash-add",
-	Short: "Add hash (send transaction)",
-	Long:  "hash-add <ipfshash> <ttl>",
-	Run:   cmd.AddHash,
-}
-
-var hashRmCmd = &cobra.Command{
-	Use:   "hash-rm",
-	Short: "Remove a hash (send transaction)",
-	Long:  "hash-rm <ipfshash>",
-	Run:   cmd.RemoveHash,
-}
-
-var metaAddCmd = &cobra.Command{
-	Use:   "meta-add",
-	Short: "Add a new meta object (send transaction)",
-	Long:  "hash-add <ipfshash>",
-	Run:   cmd.AddMetadataObject,
-}
-
-var metaRmCmd = &cobra.Command{
-	Use:   "meta-rm",
-	Short: "Remove a meta object (send transaction)",
-	Long:  "meta-rm <ipfshash>",
-	Run:   cmd.RemoveMetadataObject,
-}
-
-var setPersistLimitCmd = &cobra.Command{
-	Use:   "proxy-persistlimit",
-	Short: "Sets the persist limit (send transaction)",
-	Long:  "proxy-persistlimit <limit>",
-	Run:   cmd.SetPersistLimit,
-}
-
 var dbDumpCmd = &cobra.Command{
 	Use:   "db-dump",
 	Short: "Dumps the database",
@@ -92,39 +50,31 @@ var dbInitCmd = &cobra.Command{
 	Run:   cmd.InitDb,
 }
 
-var dbSkipTxCmd = &cobra.Command{
-	Use:   "db-skiptx",
-	Short: "Skip a transaction",
-	Long:  "Do not process the selected transaction",
-	Run:   cmd.AddSkipTx,
+var ipfscInitCmd = &cobra.Command{
+	Use:   "ipfsc-init",
+	Short: "Initialize ipfsc",
+	Long:  "Initialize ipfsc",
+	Run:   cmd.IpfscInit,
 }
 
-var dbMetaRmCmd = &cobra.Command{
-	Use:   "db-meta-rm",
-	Short: "Remove meta object from DB",
-	Long:  "Remove meta object from DB",
-	Run:   cmd.DbRemoveMetadataObject,
+var ipfscInfoCmd = &cobra.Command{
+	Use:   "info",
+	Short: "Info of local ens",
+	Long:  "Info of local ens",
+	Run:   cmd.IpfscInfo,
 }
 
-var memberAdd = &cobra.Command{
-	Use:   "proxy-member-add",
-	Short: "Adds a new member (send transaction)",
-	Long:  "proxy-member-add <address>",
-	Run:   cmd.AddMember,
+var ipfscAddCmd = &cobra.Command{
+	Use:   "add",
+	Short: "Add hash to IPFS",
+	Long:  "Add hash to IPFS",
+	Run:   cmd.IpfscAdd,
 }
-
-var memberRm = &cobra.Command{
-	Use:   "proxy-member-rm",
-	Short: "Removes a new member (send transaction)",
-	Long:  "proxy-member-rm <address>",
-	Run:   cmd.RemoveMember,
-}
-
-var memberReqCmd = &cobra.Command{
-	Use:   "proxy-member-req",
-	Short: "Sets member approval requirement (send transaction)",
-	Long:  "proxy-member-req <quorum>",
-	Run:   cmd.SetMemberRequirement,
+var ipfscRmCmd = &cobra.Command{
+	Use:   "rm",
+	Short: "Remove hash to IPFS",
+	Long:  "Remove hash to IPFS",
+	Run:   cmd.IpfscRemove,
 }
 
 // ExecuteCmd adds all child commands to the root command sets flags appropriately.
@@ -146,19 +96,14 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&verbose, "verbose", "INFO", "verbose level")
 
 	RootCmd.AddCommand(serveCmd)
-	RootCmd.AddCommand(deployProxyCmd)
-	RootCmd.AddCommand(hashAddCmd)
-	RootCmd.AddCommand(hashRmCmd)
-	RootCmd.AddCommand(metaAddCmd)
-	RootCmd.AddCommand(metaRmCmd)
-	RootCmd.AddCommand(setPersistLimitCmd)
-	RootCmd.AddCommand(memberAdd)
-	RootCmd.AddCommand(memberRm)
-	RootCmd.AddCommand(memberReqCmd)
-	RootCmd.AddCommand(dbSkipTxCmd)
+
 	RootCmd.AddCommand(dbDumpCmd)
-	RootCmd.AddCommand(dbMetaRmCmd)
 	RootCmd.AddCommand(dbInitCmd)
+
+	RootCmd.AddCommand(ipfscInitCmd)
+	RootCmd.AddCommand(ipfscInfoCmd)
+	RootCmd.AddCommand(ipfscAddCmd)
+	RootCmd.AddCommand(ipfscRmCmd)
 
 }
 

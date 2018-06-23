@@ -4,19 +4,14 @@ import (
 	"errors"
 	"sync"
 
-	common "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
-	log "github.com/sirupsen/logrus"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
 const (
-	prefixHash      = "H"
-	prefixContract  = "C"
-	prefixGlobals   = "G"
-	prefixSkipTx    = "S"
-	prefixMetadata  = "M"
-	prefixSavePoint = "P"
+	prefixHash    = "H"
+	prefixMember  = "C"
+	prefixGlobals = "G"
 )
 
 var (
@@ -65,27 +60,6 @@ func (s *Storage) SetGlobals(globals GlobalsEntry) error {
 		return err
 	}
 	return s.db.Put(key, value, nil)
-}
-
-// AddSkipTx marks a transaction to not be processed.
-func (s *Storage) AddSkipTx(txid common.Hash) error {
-	key := append([]byte(prefixSkipTx), txid[:]...)
-
-	log.WithField("tx", txid.Hex()).Debug("DB add skiptx")
-	return s.db.Put(key, []byte{1}, nil)
-}
-
-// SkipTx returns true if a transaction should't be processed.
-func (s *Storage) SkipTx(txid common.Hash) (bool, error) {
-	key := append([]byte(prefixSkipTx), txid[:]...)
-	_, err := s.db.Get(key, nil)
-	if err == nil {
-		return true, nil
-	} else if err == leveldb.ErrNotFound {
-		return false, nil
-	}
-
-	return false, err
 }
 
 func (s *Storage) globalsKV(globals GlobalsEntry) (key, value []byte, err error) {

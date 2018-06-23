@@ -28,7 +28,7 @@ var (
 	errAddressHasNoCode = errors.New("address has no code")
 )
 
-func UnmarshallAbiJson(jsonReader io.Reader) (*abi.ABI, []byte, error) {
+func UnmarshallSolcAbiJson(jsonReader io.Reader) (*abi.ABI, []byte, error) {
 
 	content, err := ioutil.ReadAll(jsonReader)
 	if err != nil {
@@ -72,9 +72,9 @@ func NewContract(client *Web3Client, abi *abi.ABI, byteCode []byte, address *com
 }
 
 // NewContractFromJson initiates a contract ABI & bytecode from json file associated to a web3 client
-func NewContractFromJson(client *Web3Client, json io.Reader, address *common.Address) (*Contract, error) {
+func NewContractFromJson(client *Web3Client, solcjson io.Reader, address *common.Address) (*Contract, error) {
 
-	abi, byteCode, err := UnmarshallAbiJson(json)
+	abi, byteCode, err := UnmarshallSolcAbiJson(solcjson)
 	if err != nil {
 		return nil, err
 	}

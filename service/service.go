@@ -2,27 +2,18 @@ package service
 
 import (
 	"errors"
-	"math/big"
-	"os"
-	"os/signal"
+	"fmt"
+	"strconv"
 
-	"github.com/ethereum/go-ethereum/ethclient"
-
-	shell "github.com/adriamb/go-ipfs-api"
-	"github.com/ethereum/go-ethereum/common"
-	eth "github.com/ipfsconsortium/gipc/eth"
+	cfg "github.com/ipfsconsortium/gipc/config"
+	ipfsc "github.com/ipfsconsortium/gipc/ipfsc"
 	sto "github.com/ipfsconsortium/gipc/storage"
 	log "github.com/sirupsen/logrus"
 )
 
 type Service struct {
-	persistLimit *big.Int
-	proxyNetwork uint64
-	ethclients   map[uint64]*ethclient.Client
-	dispatchers  map[uint64]*ScanEventDispatcher
-	proxy        *eth.Contract
-	ipfs         *shell.Shell
-	storage      *sto.Storage
+	ipfsc   *ipfsc.Ipfsc
+	storage *sto.Storage
 }
 
 var (
@@ -31,99 +22,179 @@ var (
 	errReachedPersistLimit = errors.New("persistlimit reached")
 )
 
-func NewService(ethclients map[uint64]*ethclient.Client, proxyNetwork uint64, proxy *eth.Contract, ipfs *shell.Shell, storage *sto.Storage) *Service {
+func NewService(ipfsc *ipfsc.Ipfsc, storage *sto.Storage) *Service {
+	return &Service{ipfsc, storage}
+}
 
-	dispatchers := make(map[uint64]*ScanEventDispatcher)
+func (s *Service) syncConsortiumManifest(member string, m *ipfsc.ConsortiumManifest, quotum *int) {
 
-	for networkid, ethclient := range ethclients {
-		dispatchers[networkid] = NewScanEventDispatcher(ethclient, newSavePoint(storage, networkid))
+	for _, member := range m.Members {
+
+		log.WithFields(log.Fields{
+			"member": member.EnsName,
+			"quotum": member.Quotum,
+		}).Info("Processing member")
+
+		quotum, err := strconv.Atoi(member.Quotum)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"member": member.EnsName,
+			}).Error("Bad member quotum")
+			continue
+		}
+
+		err = s.syncEnsName(member.EnsName, &quotum)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"member": member.EnsName,
+				"err":    err,
+			}).Error("Error processing member")
+		}
+
+	}
+}
+
+func (s *Service) syncPinningManifest(member string, m *ipfsc.PinningManifest, quotum *int) {
+
+	if quotum == nil {
+		localquotum, err := strconv.Atoi(m.Quotum)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"quotum": m.Quotum,
+				"err":    err,
+			}).Error("Invalid quota, unable to process")
+			return
+		}
+		quotum = &localquotum
 	}
 
-	return &Service{
-		dispatchers:  dispatchers,
-		proxyNetwork: proxyNetwork,
-		ethclients:   ethclients,
-		proxy:        proxy,
-		ipfs:         ipfs,
-		storage:      storage,
+	for i, ipfshash := range m.Pin {
+		log.WithField("c", fmt.Sprintf("%v/%v", i, len(m.Pin))).Info("Processing manifest")
+		if err := s.addHash(member, ipfshash, *quotum); err != nil {
+			log.WithFields(log.Fields{
+				"hash": ipfshash,
+				"err":  err,
+			}).Error("Failed adding hash")
+		}
+	}
+}
+
+func (s *Service) syncEnsName(ensname string, quotum *int) error {
+
+	manifest, err := s.ipfsc.Read(ensname)
+	if err != nil {
+		return err
+	}
+
+	switch v := manifest.(type) {
+	case *ipfsc.ConsortiumManifest:
+		s.syncConsortiumManifest(ensname, v, quotum)
+	case *ipfsc.PinningManifest:
+		s.syncPinningManifest(ensname, v, quotum)
+	default:
+		return fmt.Errorf("Unknown manifest type")
+	}
+	return nil
+}
+
+func (s *Service) addHash(member, ipfsHash string, quotum int) error {
+
+	log.WithFields(log.Fields{
+		"hash": ipfsHash,
+	}).Info("SERVE addHash")
+
+	// get the size & pin
+
+	stats, err := s.ipfsc.IPFS().ObjectStat(ipfsHash)
+	if err != nil {
+		log.WithError(err).Error("Failed to ipfs.ObjectStat")
+		return err
+	}
+
+	log.WithFields(log.Fields{
+		"hash":     ipfsHash,
+		"datasize": stats.DataSize,
+	}).Debug("IPFS stats")
+
+	globals, err := s.storage.Globals()
+	if err != nil {
+		log.WithError(err).Error("Failed to get storage globals")
+		return err
+	}
+
+	requieredLimit := int(globals.CurrentQuota) + int(stats.DataSize)
+	if requieredLimit > quotum {
+		log.WithFields(log.Fields{
+			"hash":      ipfsHash,
+			"current":   globals.CurrentQuota,
+			"requiered": requieredLimit,
+		}).Error(errReachedPersistLimit)
+
+		return errReachedPersistLimit
+	}
+	err = s.ipfsc.IPFS().Pin(ipfsHash, false)
+	if err != nil {
+		return err
+	}
+	log.WithFields(log.Fields{
+		"Hash": ipfsHash,
+	}).Debug("IPFS pinning ok")
+
+	// store in the DB
+	err = s.storage.AddHash(
+		member, ipfsHash,
+		uint(stats.DataSize),
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Service) removeHash(member, ipfsHash string) error {
+
+	log.WithFields(log.Fields{
+		"hash": ipfsHash,
+	}).Info("SERVE removeHash")
+
+	// remove from DB
+	isLastHash, err := s.storage.RemoveHash(member, ipfsHash)
+	if err != nil {
+		return err
+	}
+
+	if isLastHash {
+		// is the last has registerer in a contract, unpin it
+		s.ipfsc.IPFS().Unpin(ipfsHash)
+		if err != nil {
+			log.Warn("IPFS says that hash ", ipfsHash, " is not pinned.")
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) serve() {
+	for _, name := range cfg.C.EnsNames.Remotes {
+		log.WithFields(log.Fields{
+			"ens":  name,
+			"ipfs": name,
+		}).Info("Processing ENS name")
+
+		err := s.syncEnsName(name, nil)
+
+		if err != nil {
+			log.WithFields(log.Fields{
+				"ens":   name,
+				"error": err,
+			}).Error("Cannot process name")
+		}
 	}
 }
 
 func (s *Service) Serve() error {
-
-	var err error
-
-	// -- read current persistlimit
-
-	if err = s.proxy.VerifyBytecode(); err != nil {
-		return errVerifySmartcontract
-	}
-
-	if err = s.proxy.Call(&s.persistLimit, "persistLimit"); err != nil {
-		return errReadPersistLimit
-	}
-
-	s.registerProxyHandlers(s.proxyNetwork, *s.proxy.Address())
-
-	var contracts []common.Address
-	if contracts, err = s.storage.Contracts(); err != nil {
-		return err
-	}
-
-	// update DB is proxy contract is not added as contract
-
-	isProxyContractInDb := false
-	for _, contract := range contracts {
-		if contract == *s.proxy.Address() {
-			isProxyContractInDb = true
-			break
-		}
-	}
-	if !isProxyContractInDb {
-		if err = s.storage.AddContract(*s.proxy.Address()); err != nil {
-			return err
-		}
-		contracts = append(contracts, *s.proxy.Address())
-	}
-
-	// -- register handlers for proxy addHash/addRemove
-
-	for _, contract := range contracts {
-		s.registerBasicHandlers(s.proxyNetwork, contract)
-	}
-
-	// -- register handlers for meta
-	metadatahashes, err := s.storage.Metadatas()
-	if err != nil {
-		return err
-	}
-	for _, metadatahash := range metadatahashes {
-		err = s.registerMetadataHandler(metadatahash)
-		if err != nil {
-			return err
-		}
-	}
-
-	// -- start handlers
-
-	for _, dispatcher := range s.dispatchers {
-		dispatcher.Start()
-	}
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	go func() {
-		for _ = range c {
-			log.Info("SERVE interrupt signal got. Finishing.")
-			for _, dispatcher := range s.dispatchers {
-				dispatcher.Stop()
-			}
-			break
-		}
-	}()
-	for _, dispatcher := range s.dispatchers {
-		dispatcher.Join()
-	}
-
+	s.serve()
 	return nil
 }

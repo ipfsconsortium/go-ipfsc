@@ -3,11 +3,12 @@ package commands
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"sync"
 
 	cfg "github.com/ipfsconsortium/gipc/config"
+	ens "github.com/ipfsconsortium/gipc/ens"
 	eth "github.com/ipfsconsortium/gipc/eth"
+	ipfsclient "github.com/ipfsconsortium/gipc/ipfsc"
 	sto "github.com/ipfsconsortium/gipc/storage"
 	log "github.com/sirupsen/logrus"
 
@@ -21,35 +22,31 @@ import (
 
 var (
 	ethclients map[uint64]*ethclient.Client
-	proxy      *eth.Contract
-	ipfs       *shell.Shell
+	ipfsc      *ipfsclient.Ipfsc
 	storage    *sto.Storage
 )
 
 func load(withStorage bool) error {
 
-	if proxy != nil {
+	if ipfsc != nil {
 		// already initialized
 		return nil
 	}
 
 	var err error
 
-	if err = loadEthClients(); err != nil {
-		return err
-	}
-	if err = loadIPFSClient(); err != nil {
-		return err
-	}
-	if err = loadContract(); err != nil {
-		return err
-	}
 	if withStorage {
 		if err = loadStorage(); err != nil {
 			return err
 		}
 	}
-	return nil
+
+	if err = loadEthClients(); err != nil {
+		return err
+	}
+
+	return loadIPFSC()
+
 }
 
 func loadStorage() error {
@@ -62,42 +59,9 @@ func loadStorage() error {
 
 }
 
-func loadEthClients() error {
+func loadIPFSC() error {
 
-	// load all clients
-
-	ethclients = make(map[uint64]*ethclient.Client)
-
-	for _, network := range cfg.C.Networks {
-
-		log.WithField("network", network.RPCURL).Info("Checking network.")
-
-		client, err := ethclient.Dial(network.RPCURL)
-		if err != nil {
-			return err
-		}
-
-		networkid, err := client.NetworkID(context.Background())
-		if err != nil {
-			return err
-		}
-
-		if networkid.Uint64() != network.NetworkID {
-			return fmt.Errorf("NetworkID RPC return a different networkid", network.NetworkID)
-		}
-
-		ethclients[network.NetworkID] = client
-
-	}
-
-	return nil
-}
-
-func loadContract() error {
-
-	// load the keystore
-
-	var err error
+	// load ens.
 
 	ks := keystore.NewKeyStore(cfg.C.Keystore.Path, keystore.StandardScryptN, keystore.StandardScryptP)
 	account, err := ks.Find(accounts.Account{
@@ -112,53 +76,58 @@ func loadContract() error {
 		return err
 	}
 
-	// crete web3 client & get info
+	ensClient := ethclients[cfg.C.EnsNames.Network]
+	ensAddr := common.HexToAddress(cfg.C.Networks[cfg.C.EnsNames.Network].EnsRoot)
 
-	client, err := eth.NewWeb3Client(
-		ethclients[cfg.C.Contracts.IPFSProxy.NetworkID],
-		ks,
-		account,
-	)
+	web3 := eth.NewWeb3Client(ensClient, ks, &account)
+	web3.ClientMutex = &sync.Mutex{}
+	ensclient, err := ens.New(web3, &ensAddr)
 	if err != nil {
 		return err
 	}
 
-	client.ClientMutex = &sync.Mutex{}
+	log.WithField("url", cfg.C.IPFS.APIURL).Info("Checking IPFS.")
 
-	balance, err := client.BalanceInfo()
-	if err != nil {
-		return err
-	}
+	// load ipfs
 
-	log.WithFields(log.Fields{
-		"account": account.Address.Hex(),
-		"balance": balance,
-	}).Info("Account loaded from keystore")
-
-	// create the contract
-
-	resp, err := http.Get(cfg.C.Contracts.IPFSProxy.JSONURL)
-	if err != nil {
-		return err
-	}
-
-	defer resp.Body.Close()
-
-	if cfg.C.Contracts.IPFSProxy.Address != "" {
-		address := common.HexToAddress(cfg.C.Contracts.IPFSProxy.Address)
-		proxy, err = eth.NewContractFromJson(client, resp.Body, &address)
-	} else {
-		proxy, err = eth.NewContractFromJson(client, resp.Body, nil)
-	}
-
-	return err
-
-}
-
-func loadIPFSClient() error {
-	ipfs = shell.NewShell(cfg.C.IPFS.APIURL)
+	ipfs := shell.NewShell(cfg.C.IPFS.APIURL)
 	if !ipfs.IsUp() {
 		return fmt.Errorf("Cannot connect with local IPFS node")
 	}
+
+	ipfsc = ipfsclient.New(ipfs, ensclient)
+
+	return nil
+
+}
+
+func loadEthClients() error {
+
+	// load all clients
+
+	ethclients = make(map[uint64]*ethclient.Client)
+
+	for networkid, network := range cfg.C.Networks {
+
+		log.WithField("url", network.RPCURL).Info("Checking WEB3.")
+
+		client, err := ethclient.Dial(network.RPCURL)
+		if err != nil {
+			return err
+		}
+
+		clientnetworkid, err := client.NetworkID(context.Background())
+		if err != nil {
+			return err
+		}
+
+		if clientnetworkid.Uint64() != networkid {
+			return fmt.Errorf("NetworkID RPC return a different networkid", networkid)
+		}
+
+		ethclients[networkid] = client
+
+	}
+
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -30,13 +31,14 @@ var (
 type Web3Client struct {
 	ClientMutex    *sync.Mutex
 	Client         *ethclient.Client
-	Account        accounts.Account
+	Account        *accounts.Account
 	Ks             *keystore.KeyStore
 	ReceiptTimeout time.Duration
+	MaxGasPrice    uint64
 }
 
 // NewWeb3Client creates a client, using a keystore and an account for transactions
-func NewWeb3ClientWithURL(rpcURL string, ks *keystore.KeyStore, account accounts.Account) (*Web3Client, error) {
+func NewWeb3ClientWithURL(rpcURL string, ks *keystore.KeyStore, account *accounts.Account) (*Web3Client, error) {
 
 	var err error
 
@@ -54,14 +56,15 @@ func NewWeb3ClientWithURL(rpcURL string, ks *keystore.KeyStore, account accounts
 }
 
 // NewWeb3Client creates a client, using a keystore and an account for transactions
-func NewWeb3Client(client *ethclient.Client, ks *keystore.KeyStore, account accounts.Account) (*Web3Client, error) {
+func NewWeb3Client(client *ethclient.Client, ks *keystore.KeyStore, account *accounts.Account) *Web3Client {
 
 	return &Web3Client{
 		Client:         client,
 		Ks:             ks,
 		Account:        account,
 		ReceiptTimeout: 120 * time.Second,
-	}, nil
+		MaxGasPrice:    4000000000,
+	}
 }
 
 // BalanceInfo retieves information about the default account
@@ -88,6 +91,10 @@ func (w *Web3Client) SendTransactionSync(to *common.Address, value *big.Int, gas
 
 	ctx := context.TODO()
 
+	if value == nil {
+		value = big.NewInt(0)
+	}
+
 	network, err := w.Client.NetworkID(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -96,6 +103,11 @@ func (w *Web3Client) SendTransactionSync(to *common.Address, value *big.Int, gas
 	gasPrice, err := w.Client.SuggestGasPrice(ctx)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if gasPrice.Uint64() > w.MaxGasPrice {
+		log.Error("WEB3 Failed EstimateGas from=%v to=%v value=%v data=%v")
+		return nil, nil, fmt.Errorf("Max gas price reached %v > %v", gasPrice, w.MaxGasPrice)
 	}
 
 	callmsg := ethereum.CallMsg{
@@ -140,11 +152,14 @@ func (w *Web3Client) SendTransactionSync(to *common.Address, value *big.Int, gas
 		)
 	}
 
-	if tx, err = w.Ks.SignTx(w.Account, tx, network); err != nil {
+	if tx, err = w.Ks.SignTx(*w.Account, tx, network); err != nil {
 		return nil, nil, err
 	}
 
-	log.WithField("tx", tx.Hash().Hex()).Info("WEB3 Sending transaction")
+	log.WithFields(log.Fields{
+		"tx":       tx.Hash().Hex(),
+		"gasprice": fmt.Sprintf("%.2f Gwei", float64(tx.GasPrice().Uint64())/1000000000.0),
+	}).Info("WEB3 Sending transaction")
 	if err = w.Client.SendTransaction(ctx, tx); err != nil {
 		return nil, nil, err
 	}
@@ -196,7 +211,7 @@ func (w *Web3Client) Sign(data ...[]byte) ([3][32]byte, error) {
 	var ret [3][32]byte
 
 	// The produced signature is in the [R || S || V] format where V is 0 or 1.
-	sig, err := w.Ks.SignHash(w.Account, prefixedHash)
+	sig, err := w.Ks.SignHash(*w.Account, prefixedHash)
 	if err != nil {
 		return ret, err
 	}

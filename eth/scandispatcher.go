@@ -1,4 +1,4 @@
-package service
+package eth
 
 import (
 	"bytes"
@@ -14,12 +14,17 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ipfsconsortium/gipc/eth"
 
 	log "github.com/sirupsen/logrus"
 )
 
 type EventHandlerFunc func(*types.Log, *ScanEventHandler) error
+
+type SavePoint interface {
+	Load() (lastBlock uint64, lastTxIndex, lastLogIndex uint, err error)
+	Save(logevent *types.Log) error
+	SkipTx(txid common.Hash) (bool, error)
+}
 
 type ScanEventHandler struct {
 	Address   common.Address
@@ -35,10 +40,10 @@ type ScanEventDispatcher struct {
 	client *ethclient.Client
 
 	eventHandlers []ScanEventHandler
-	savepoint     *savePoint
+	savepoint     SavePoint
 
 	block    *types.Block
-	receipts *eth.ReceiptDownloader
+	receipts *ReceiptDownloader
 
 	terminatech  chan interface{}
 	terminatedch chan interface{}
@@ -48,13 +53,13 @@ type ScanEventDispatcher struct {
 	nextLogIndex uint
 }
 
-func NewScanEventDispatcher(client *ethclient.Client, savepoint *savePoint) *ScanEventDispatcher {
+func NewScanEventDispatcher(client *ethclient.Client, savepoint SavePoint) *ScanEventDispatcher {
 
 	return &ScanEventDispatcher{
 		client:    client,
 		savepoint: savepoint,
 
-		receipts: eth.NewReceiptDownloader(client, 3),
+		receipts: NewReceiptDownloader(client, 3),
 
 		terminatech:  make(chan interface{}),
 		terminatedch: make(chan interface{}),

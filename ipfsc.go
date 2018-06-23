@@ -8,6 +8,7 @@ import (
 )
 
 func main() {
+
 	banner.Print("gipc")
 	fmt.Println("IPFS Consortium go implementation.")
 	cmd.ExecuteCmd()
