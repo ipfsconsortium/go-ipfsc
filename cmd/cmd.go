@@ -29,11 +29,11 @@ var RootCmd = &cobra.Command{
 	},
 }
 
-var serveCmd = &cobra.Command{
-	Use:   "serve",
-	Short: "Start the server",
-	Long:  "Start the server",
-	Run:   cmd.Serve,
+var syncCmd = &cobra.Command{
+	Use:   "sync",
+	Short: "Sync",
+	Long:  "Sync",
+	Run:   cmd.Sync,
 }
 
 var dbDumpCmd = &cobra.Command{
@@ -51,17 +51,17 @@ var dbInitCmd = &cobra.Command{
 }
 
 var ipfscInitCmd = &cobra.Command{
-	Use:   "ipfsc-init",
+	Use:   "init",
 	Short: "Initialize ipfsc",
 	Long:  "Initialize ipfsc",
 	Run:   cmd.IpfscInit,
 }
 
-var ipfscInfoCmd = &cobra.Command{
-	Use:   "info",
+var ipfscLsCmd = &cobra.Command{
+	Use:   "ls",
 	Short: "Info of local ens",
 	Long:  "Info of local ens",
-	Run:   cmd.IpfscInfo,
+	Run:   cmd.IpfscLs,
 }
 
 var ipfscAddCmd = &cobra.Command{
@@ -95,13 +95,13 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file")
 	RootCmd.PersistentFlags().StringVar(&verbose, "verbose", "INFO", "verbose level")
 
-	RootCmd.AddCommand(serveCmd)
+	RootCmd.AddCommand(syncCmd)
 
 	RootCmd.AddCommand(dbDumpCmd)
 	RootCmd.AddCommand(dbInitCmd)
 
 	RootCmd.AddCommand(ipfscInitCmd)
-	RootCmd.AddCommand(ipfscInfoCmd)
+	RootCmd.AddCommand(ipfscLsCmd)
 	RootCmd.AddCommand(ipfscAddCmd)
 	RootCmd.AddCommand(ipfscRmCmd)
 

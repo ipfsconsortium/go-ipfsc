@@ -194,7 +194,7 @@ func (s *Service) serve() {
 	}
 }
 
-func (s *Service) Serve() error {
+func (s *Service) Sync() error {
 	s.serve()
 	return nil
 }
