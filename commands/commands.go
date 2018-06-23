@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	cfg "github.com/ipfsconsortium/gipc/config"
 	ipfsclient "github.com/ipfsconsortium/gipc/ipfsc"
@@ -37,7 +38,7 @@ func InitDb(cmd *cobra.Command, args []string) {
 
 }
 
-func IpfscInfo(cmd *cobra.Command, args []string) {
+func IpfscLs(cmd *cobra.Command, args []string) {
 
 	must(loadEthClients())
 	must(loadIPFSC())
@@ -90,8 +91,27 @@ func IpfscAdd(cmd *cobra.Command, args []string) {
 	}
 
 	manifest := m.(*ipfsclient.PinningManifest)
-	for _, ipfshash := range args {
-		manifest.Pin = append(manifest.Pin, ipfshash)
+	for _, entry := range args {
+
+		var ipfsHash string
+
+		if strings.HasPrefix(entry, "/ipfs/") {
+			ipfsHash = entry
+		} else {
+			file, err := os.Open(entry)
+			if err != nil {
+				log.WithError(err).Error("Cannot open ", entry)
+				return
+			}
+			hash, err := ipfsc.IPFS().Add(file)
+			if err != nil {
+				log.WithError(err).Error("Cannot add to IPFS ", entry)
+				return
+			}
+			ipfsHash = "/ipfs/" + hash
+		}
+		log.WithField("hash", ipfsHash).Info("Appending entry to manifest")
+		manifest.Pin = append(manifest.Pin, ipfsHash)
 	}
 
 	if err := ipfsc.Write(cfg.C.EnsNames.Local, manifest); err != nil {
@@ -132,12 +152,12 @@ func IpfscRemove(cmd *cobra.Command, args []string) {
 }
 
 // Serve command
-func Serve(cmd *cobra.Command, args []string) {
+func Sync(cmd *cobra.Command, args []string) {
 
 	must(load(true))
 
 	service.NewService(
 		ipfsc, storage,
-	).Serve()
+	).Sync()
 
 }
