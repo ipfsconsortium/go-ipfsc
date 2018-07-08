@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	cfg "github.com/ipfsconsortium/gipc/config"
 	ens "github.com/ipfsconsortium/gipc/ens"
@@ -91,6 +92,11 @@ func loadIPFSC() error {
 	// load ipfs
 
 	ipfs := shell.NewShell(cfg.C.IPFS.APIURL)
+	duration, err := time.ParseDuration(cfg.C.IPFS.Timeout)
+	if err != err {
+		return err
+	}
+	ipfs.SetTimeout(duration)
 	if !ipfs.IsUp() {
 		return fmt.Errorf("Cannot connect with local IPFS node")
 	}

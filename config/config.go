@@ -22,7 +22,8 @@ type Config struct {
 	}
 
 	IPFS struct {
-		APIURL string
+		APIURL  string
+		Timeout string
 	}
 
 	Networks map[uint64]struct {
