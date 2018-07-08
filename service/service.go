@@ -99,58 +99,81 @@ func (s *Service) syncEnsName(ensname string, quotum *int) error {
 
 func (s *Service) addHash(member, ipfsHash string, quotum int) error {
 
+	var err error
+
 	log.WithFields(log.Fields{
 		"hash": ipfsHash,
 	}).Info("SERVE addHash")
 
-	// get the size & pin
+	entry, _ := s.storage.Hash(ipfsHash)
 
-	stats, err := s.ipfsc.IPFS().ObjectStat(ipfsHash)
-	if err != nil {
-		log.WithError(err).Error("Failed to ipfs.ObjectStat")
-		return err
-	}
+	if entry != nil {
 
-	log.WithFields(log.Fields{
-		"hash":     ipfsHash,
-		"datasize": stats.DataSize,
-	}).Debug("IPFS stats")
+		for _, m := range entry.Members {
+			if m == member {
+				log.WithField("hash", ipfsHash).Info("Already pinned by this member")
+				return nil
+			}
+		}
+		log.WithField("hash", ipfsHash).Info("Object pinned by other members")
 
-	globals, err := s.storage.Globals()
-	if err != nil {
-		log.WithError(err).Error("Failed to get storage globals")
-		return err
-	}
+		err = s.storage.AddHash(
+			member, ipfsHash,
+			entry.DataSize,
+		)
 
-	requieredLimit := int(globals.CurrentQuota) + int(stats.DataSize)
-	if requieredLimit > quotum {
+	} else {
+
+		// get the size & pin
+		stats, err := s.ipfsc.IPFS().ObjectStat(ipfsHash)
+		if err != nil {
+			log.WithError(err).Error("Failed to ipfs.ObjectStat")
+			return err
+		}
 		log.WithFields(log.Fields{
-			"hash":      ipfsHash,
-			"current":   globals.CurrentQuota,
-			"requiered": requieredLimit,
-		}).Error(errReachedPersistLimit)
+			"hash": ipfsHash,
+			"size": stats.DataSize,
+		}).Info("Retrieved object size")
 
-		return errReachedPersistLimit
+		log.WithFields(log.Fields{
+			"hash":     ipfsHash,
+			"datasize": stats.DataSize,
+		}).Debug("IPFS stats")
+
+		globals, err := s.storage.Globals()
+		if err != nil {
+			log.WithError(err).Error("Failed to get storage globals")
+			return err
+		}
+
+		requieredLimit := int(globals.CurrentQuota) + int(stats.DataSize)
+		if requieredLimit > quotum {
+			log.WithFields(log.Fields{
+				"hash":      ipfsHash,
+				"current":   globals.CurrentQuota,
+				"requiered": requieredLimit,
+			}).Error(errReachedPersistLimit)
+
+			return errReachedPersistLimit
+		}
+
+		err = s.ipfsc.IPFS().Pin(ipfsHash, false)
+		if err != nil {
+			return err
+		}
+		log.WithFields(log.Fields{
+			"Hash": ipfsHash,
+		}).Debug("IPFS pinning ok")
+
+		// store in the DB
+		err = s.storage.AddHash(
+			member, ipfsHash,
+			uint(stats.DataSize),
+		)
+
 	}
-	err = s.ipfsc.IPFS().Pin(ipfsHash, false)
-	if err != nil {
-		return err
-	}
-	log.WithFields(log.Fields{
-		"Hash": ipfsHash,
-	}).Debug("IPFS pinning ok")
 
-	// store in the DB
-	err = s.storage.AddHash(
-		member, ipfsHash,
-		uint(stats.DataSize),
-	)
-
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (s *Service) removeHash(member, ipfsHash string) error {

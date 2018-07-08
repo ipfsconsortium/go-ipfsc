@@ -1,8 +1,6 @@
 package storage
 
 import (
-	"fmt"
-
 	"github.com/ethereum/go-ethereum/rlp"
 	log "github.com/sirupsen/logrus"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -18,7 +16,6 @@ func (s *Storage) AddHash(member string, hash string, size uint) error {
 
 	hkey, hvalue, update, err := s.addHashKV(member, hash, size)
 	if err != nil {
-		fmt.Println("--1")
 		return err
 	}
 	if hkey == nil {
@@ -35,7 +32,6 @@ func (s *Storage) AddHash(member string, hash string, size uint) error {
 
 		if err != nil {
 			if err != dberr.ErrNotFound {
-				fmt.Println("--2")
 				return err
 			}
 			memberdata = &MemberEntry{0}
@@ -45,8 +41,6 @@ func (s *Storage) AddHash(member string, hash string, size uint) error {
 
 		ckey, cvalue, err := s.memberKV(&member, memberdata)
 		if err != nil {
-			fmt.Println("--3")
-
 			return err
 		}
 		batch.Put(ckey, cvalue)
@@ -55,8 +49,6 @@ func (s *Storage) AddHash(member string, hash string, size uint) error {
 
 		globals, err := s.Globals()
 		if err != nil {
-			fmt.Println("--4")
-
 			return err
 		}
 		globals.CurrentQuota += size
@@ -120,6 +112,24 @@ func (s *Storage) RemoveHash(member string, hash string) (bool, error) {
 	return false, s.db.Put(key, value, nil)
 }
 
+func (s *Storage) Hash(hash string) (*HashEntry, error) {
+	key := append([]byte(prefixHash), []byte(hash)...)
+
+	value, err := s.db.Get(key, nil)
+
+	if err == dberr.ErrNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var entry HashEntry
+	err = rlp.DecodeBytes(value, &entry)
+
+	return &entry, err
+}
+
 func (s *Storage) addHashKV(member string, hash string, size uint) (key, value []byte, update bool, err error) {
 
 	key = append([]byte(prefixHash), []byte(hash)...)
@@ -131,13 +141,9 @@ func (s *Storage) addHashKV(member string, hash string, size uint) (key, value [
 
 		err := rlp.DecodeBytes(value, &entry)
 		if err != nil {
-			fmt.Println("--5")
-
 			return nil, nil, false, err
 		}
 		if size != entry.DataSize {
-			fmt.Println("--6")
-
 			return nil, nil, false, errInconsistentSize
 		}
 
