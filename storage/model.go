@@ -7,6 +7,7 @@ type HashEntry struct {
 
 type MemberEntry struct {
 	HashCount uint
+	DataSize  uint
 }
 
 type GlobalsEntry struct {

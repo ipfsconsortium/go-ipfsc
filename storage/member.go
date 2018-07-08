@@ -3,25 +3,23 @@ package storage
 import (
 	"github.com/ethereum/go-ethereum/rlp"
 	log "github.com/sirupsen/logrus"
+	dberr "github.com/syndtr/goleveldb/leveldb/errors"
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
 // Contract return a new contract.
 func (s *Storage) Member(member string) (*MemberEntry, error) {
 
-	memberKey := append([]byte(prefixMember), []byte(member)[:]...)
-	value, err := s.db.Get(memberKey, nil)
-	if err != nil {
+	var err error
+	var mentry *MemberEntry
+
+	if _, mentry, err = s.memberGet(member); err != nil {
 		return nil, err
 	}
-
-	var entry MemberEntry
-	err = rlp.DecodeBytes(value, &entry)
-	if err != nil {
-		return nil, err
+	if mentry == nil {
+		return nil, dberr.ErrNotFound
 	}
-
-	return &entry, nil
+	return mentry, nil
 }
 
 // Contracts returns the list of current defined contracts.
@@ -43,24 +41,28 @@ func (s *Storage) Members() ([]string, error) {
 // AddContract to the storage.
 func (s *Storage) AddMember(member string) error {
 
-	key, _, _ := s.memberKV(&member, nil)
-	_, err := s.db.Get(key, nil)
+	var err error
+	var mkey, mvalue []byte
+	var mentry *MemberEntry
 
-	if err == nil {
-		return errContractAlreadyExists
+	if mkey, mentry, err = s.memberGet(member); err != nil {
+		return err
+	}
+	if mentry != nil {
+		return ErrKeyAlreadyExists
 	}
 
-	entry := MemberEntry{
+	mentry = &MemberEntry{
 		HashCount: 0,
 	}
-	_, value, err := s.memberKV(nil, &entry)
-	if err != nil {
+
+	if mvalue, err = rlp.EncodeToBytes(mentry); err != nil {
 		return err
 	}
 
 	log.WithField("contract", member).Debug("DB added contract")
 
-	return s.db.Put(key, value, nil)
+	return s.db.Put(mkey, mvalue, nil)
 }
 
 // RemoveMember from the storage..
@@ -69,19 +71,22 @@ func (s *Storage) RemoveMember(member string) error {
 	_, err := s.db.Get(key, nil)
 
 	if err != nil {
-		return errContractNotExists
+		return ErrKeyNotExists
 	}
 
 	log.WithField("member", member).Debug("DB removed member")
 	return s.db.Delete(key, nil)
 }
 
-func (s *Storage) memberKV(name *string, member *MemberEntry) (key, value []byte, err error) {
-	if member != nil {
-		key = append([]byte(prefixMember), []byte(*name)[:]...)
+func (s *Storage) memberGet(member string) ([]byte, *MemberEntry, error) {
+	mkey := append([]byte(prefixMember), []byte(member)...)
+	mvalue, err := s.db.Get(mkey, nil)
+	if err == dberr.ErrNotFound {
+		return mkey, nil, nil
+	} else if err != nil {
+		return nil, nil, nil
 	}
-	if member != nil {
-		value, err = rlp.EncodeToBytes(member)
-	}
-	return key, value, err
+	var mentry MemberEntry
+	err = rlp.DecodeBytes(mvalue, &mentry)
+	return mkey, &mentry, err
 }
