@@ -34,11 +34,6 @@ func (s *Storage) Dump(w io.Writer) {
 				break
 			}
 
-			w.Write([]byte(fmt.Sprintf(" size=%v\n", entry.DataSize)))
-			for _, member := range entry.Members {
-				w.Write([]byte(fmt.Sprintf("| MEMBER %v\n", member)))
-			}
-
 		case isPrefix(key, prefixMember):
 
 			member := string(key[len(prefixMember):])

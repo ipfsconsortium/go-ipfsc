@@ -36,7 +36,7 @@ type PinningManifest struct {
 }
 
 const (
-	manifestKey = "consortiumManifest"
+	DefaultManifestKey = "consortiumManifest"
 )
 
 type Ipfsc struct {
@@ -78,7 +78,7 @@ func New(ipfs *shell.Shell, ens *ens.ENSClient) *Ipfsc {
 func (i *Ipfsc) Read(ensname string) (interface{}, error) {
 
 	log.WithField("ensname", ensname).Info("Reading IPFS key from ENS")
-	ipfshash, err := i.ens.Text(ensname, manifestKey)
+	ipfshash, err := i.ens.Text(ensname, DefaultManifestKey)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,6 @@ func (i *Ipfsc) Read(ensname string) (interface{}, error) {
 	}
 
 	return manifest, nil
-
 }
 
 func (i *Ipfsc) Write(ensname string, manifest *PinningManifest) error {
@@ -117,7 +116,7 @@ func (i *Ipfsc) Write(ensname string, manifest *PinningManifest) error {
 	}
 
 	log.WithField("hash", ipfshash).Info("Writing manifest IPFS to ENS")
-	err = i.ens.SetText(ensname, manifestKey, ipfshash)
+	err = i.ens.SetText(ensname, DefaultManifestKey, ipfshash)
 	if err != nil {
 		return err
 	}
