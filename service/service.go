@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	cfg "github.com/ipfsconsortium/gipc/config"
 	ipfsc "github.com/ipfsconsortium/gipc/ipfsc"
@@ -121,32 +122,31 @@ func (s *Service) collectIPFS(expr, path string) int {
 	}
 
 	// object is not in the database, so get data from it
-	objectStats, err := s.ipfsc.IPFS().ObjectStat(expr)
+	start := time.Now()
+	ipfsObject, err := s.ipfsc.IPFS().ObjectGet(expr)
 	if err != nil {
-		log.WithError(err).Error("Unable to get stats of " + expr)
+		log.WithError(err).Error("Unable to get object " + expr)
 		return 1
 	}
 
+	log.WithFields(log.Fields{
+		"#links": len(ipfsObject.Links),
+	}).Info("Got Objectats in ", time.Since(start))
+
 	var links []string
 	errors := 0
-	if objectStats.NumLinks > 0 {
-
-		// process links
-		ipfsObject, err := s.ipfsc.IPFS().ObjectGet(expr)
-		if err != nil {
-			log.WithError(err).Error("Unable to get object " + expr)
-			return 1
-		}
+	// if is a list (large file), names are empty, if not,
+	//  is a folder
+	if len(ipfsObject.Links) > 0 && ipfsObject.Links[0].Name != "" {
 		links = make([]string, len(ipfsObject.Links))
 		for i, link := range ipfsObject.Links {
 			links[i] = link.Hash
 			errors += s.collectIPFS(link.Hash, path+">"+expr+"("+link.Name+")")
 		}
-
 	}
 
 	if err = s.storage.AddHash(expr, &sto.HashEntry{
-		DataSize: uint(objectStats.DataSize),
+		DataSize: 0,
 		Links:    links,
 		Mark:     true,
 		Pinned:   false,
