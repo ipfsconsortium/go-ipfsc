@@ -39,8 +39,7 @@ func InitDb(cmd *cobra.Command, args []string) {
 
 func IpfscLs(cmd *cobra.Command, args []string) {
 
-	must(loadEthClients())
-	must(loadIPFSC())
+	must(load(false))
 
 	info, err := ipfsc.ENS().Info(cfg.C.EnsNames.Local)
 	if err != nil {
@@ -62,15 +61,14 @@ func IpfscLs(cmd *cobra.Command, args []string) {
 
 func IpfscInit(cmd *cobra.Command, args []string) {
 
-	must(loadEthClients())
-	must(loadIPFSC())
+	must(load(true))
 
 	quotum := args[0]
 
 	var manifest service.PinningManifest
 	manifest.Quotum = quotum
 
-	if err := ipfsc.Write(cfg.C.EnsNames.Local, &manifest); err != nil {
+	if err := ipfsc.WritePinningManifest(cfg.C.EnsNames.Local, &manifest); err != nil {
 		log.Error("Failed to init ", err)
 		return
 	}
@@ -80,8 +78,7 @@ func IpfscInit(cmd *cobra.Command, args []string) {
 
 func IpfscAdd(cmd *cobra.Command, args []string) {
 
-	must(loadEthClients())
-	must(loadIPFSC())
+	must(load(true))
 
 	m, err := ipfsc.Read(cfg.C.EnsNames.Local)
 	if err != nil {
@@ -113,7 +110,7 @@ func IpfscAdd(cmd *cobra.Command, args []string) {
 		manifest.Pin = append(manifest.Pin, ipfsHash)
 	}
 
-	if err := ipfsc.Write(cfg.C.EnsNames.Local, manifest); err != nil {
+	if err := ipfsc.WritePinningManifest(cfg.C.EnsNames.Local, manifest); err != nil {
 		log.Error("Failed to write manifest ", err)
 		return
 	}
@@ -122,8 +119,7 @@ func IpfscAdd(cmd *cobra.Command, args []string) {
 
 func IpfscRemove(cmd *cobra.Command, args []string) {
 
-	must(loadEthClients())
-	must(loadIPFSC())
+	must(load(true))
 
 	m, err := ipfsc.Read(cfg.C.EnsNames.Local)
 	if err != nil {
@@ -143,17 +139,27 @@ func IpfscRemove(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	if err := ipfsc.Write(cfg.C.EnsNames.Local, manifest); err != nil {
+	if err := ipfsc.WritePinningManifest(cfg.C.EnsNames.Local, manifest); err != nil {
 		log.Error("Failed to write manifest ", err)
 		return
 	}
 	log.Info("Manifest sucessfully updated")
 }
 
-// Serve command
-func Sync(cmd *cobra.Command, args []string) {
+func SyncLoop(cmd *cobra.Command, args []string) {
 
-	must(load(true))
+	must(load(false))
+
+	for {
+		service.NewService(
+			ipfsc, storage,
+		).Sync(cfg.C.EnsNames.Remotes)
+	}
+}
+
+func SyncOnce(cmd *cobra.Command, args []string) {
+
+	must(load(false))
 
 	service.NewService(
 		ipfsc, storage,

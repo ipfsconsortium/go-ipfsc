@@ -4,7 +4,6 @@ type HashEntry struct {
 	DataSize uint
 	Links    []string
 	Mark     bool
-	Pinned   bool
 	Dirty    bool
 }
 

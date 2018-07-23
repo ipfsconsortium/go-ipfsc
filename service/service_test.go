@@ -153,12 +153,12 @@ func createMockService(t *testing.T) (service *Service, ipfs *IPFSMock, ens *ENS
 	return NewService(ipfsc, s), ipfs, ens
 }
 
-func TestSimpleSync(t *testing.T) {
+func TestPinningSync(t *testing.T) {
 	s, ipfs, _ := createMockService(t)
 	h1 := ipfs.addFileEntry("h1")
 	h2 := ipfs.addFileEntry("h2")
 
-	s.ipfsc.Write("set1.eth", &PinningManifest{Pin: []string{h1, h2}})
+	s.ipfsc.WritePinningManifest("set1.eth", &PinningManifest{Pin: []string{h1, h2}})
 
 	pinned, unpinned, errors, err := s.Sync([]string{"set1.eth"})
 	assert.Equal(t, 2, pinned)
@@ -170,6 +170,33 @@ func TestSimpleSync(t *testing.T) {
 	assert.True(t, ipfs.isPinned(h2))
 }
 
+func TestConsortiumSync(t *testing.T) {
+	s, ipfs, _ := createMockService(t)
+	h1 := ipfs.addFileEntry("h1")
+	h2 := ipfs.addFileEntry("h2")
+	s.ipfsc.WritePinningManifest("set1.eth", &PinningManifest{Pin: []string{h1, h2}})
+
+	h3 := ipfs.addFileEntry("h3")
+	s.ipfsc.WritePinningManifest("set2.eth", &PinningManifest{Pin: []string{h2, h3}})
+
+	s.ipfsc.WriteConsortiumManifest("consortium.eth", &ConsortiumManifest{
+		Members: []ConsortiumMember{
+			ConsortiumMember{EnsName: "set1.eth"},
+			ConsortiumMember{EnsName: "set2.eth"},
+		},
+	})
+
+	pinned, unpinned, errors, err := s.Sync([]string{"consortium.eth"})
+	assert.Equal(t, 3, pinned)
+	assert.Equal(t, 0, unpinned)
+	assert.Equal(t, 0, errors)
+	assert.Nil(t, err)
+
+	assert.True(t, ipfs.isPinned(h1))
+	assert.True(t, ipfs.isPinned(h2))
+	assert.True(t, ipfs.isPinned(h3))
+}
+
 func TestDirSync(t *testing.T) {
 	s, ipfs, _ := createMockService(t)
 	h11 := ipfs.addFileEntry("h11")
@@ -178,7 +205,7 @@ func TestDirSync(t *testing.T) {
 	h12 := ipfs.addFolderEntry(h121, h122)
 	h1 := ipfs.addFolderEntry(h11, h12)
 
-	s.ipfsc.Write("set1.eth", &PinningManifest{Pin: []string{h1}})
+	s.ipfsc.WritePinningManifest("set1.eth", &PinningManifest{Pin: []string{h1}})
 	pinned, unpinned, errors, err := s.Sync([]string{"set1.eth"})
 	assert.Equal(t, 5, pinned)
 	assert.Equal(t, 0, unpinned)
@@ -198,14 +225,14 @@ func TestUpdateSimple(t *testing.T) {
 	h2 := ipfs.addFileEntry("h2")
 	h3 := ipfs.addFileEntry("h3")
 
-	s.ipfsc.Write("set1.eth", &PinningManifest{Pin: []string{h1, h2}})
+	s.ipfsc.WritePinningManifest("set1.eth", &PinningManifest{Pin: []string{h1, h2}})
 	pinned, unpinned, errors, err := s.Sync([]string{"set1.eth"})
 	assert.Equal(t, 2, pinned)
 	assert.Equal(t, 0, unpinned)
 	assert.Equal(t, 0, errors)
 	assert.Nil(t, err)
 
-	s.ipfsc.Write("set1.eth", &PinningManifest{Pin: []string{h2, h3}})
+	s.ipfsc.WritePinningManifest("set1.eth", &PinningManifest{Pin: []string{h2, h3}})
 	pinned, unpinned, errors, err = s.Sync([]string{"set1.eth"})
 	assert.Equal(t, 1, pinned)
 	assert.Equal(t, 1, unpinned)
@@ -237,8 +264,8 @@ func TestUpdateSharedBranches(t *testing.T) {
 	h21 := ipfs.addFileEntry("h21")
 	h2 := ipfs.addFolderEntry(h21, h11)
 
-	s.ipfsc.Write("set1.eth", &PinningManifest{Pin: []string{h1}})
-	s.ipfsc.Write("set2.eth", &PinningManifest{Pin: []string{h2}})
+	s.ipfsc.WritePinningManifest("set1.eth", &PinningManifest{Pin: []string{h1}})
+	s.ipfsc.WritePinningManifest("set2.eth", &PinningManifest{Pin: []string{h2}})
 	pinned, unpinned, errors, err := s.Sync([]string{"set1.eth", "set2.eth"})
 	assert.Equal(t, 7, pinned)
 	assert.Equal(t, 0, unpinned)
@@ -267,15 +294,41 @@ func TestNounpinWhenFail(t *testing.T) {
 	h3 := ipfs.addFileEntry("h3")
 	hfail := ipfs.addFailingEntry("fail1")
 
-	s.ipfsc.Write("set1.eth", &PinningManifest{Pin: []string{h1, h2}})
+	s.ipfsc.WritePinningManifest("set1.eth", &PinningManifest{Pin: []string{h1, h2}})
 	_, _, errors, err := s.Sync([]string{"set1.eth"})
 	assert.Equal(t, 0, errors)
 	assert.Nil(t, err)
 
-	s.ipfsc.Write("set1.eth", &PinningManifest{Pin: []string{h1, hfail, h3}})
+	s.ipfsc.WritePinningManifest("set1.eth", &PinningManifest{Pin: []string{h1, hfail, h3}})
 	pinned, unpinned, errors, err := s.Sync([]string{"set1.eth"})
 	assert.Equal(t, 1, pinned)
 	assert.Equal(t, 0, unpinned)
 	assert.Equal(t, 1, errors)
+	assert.Nil(t, err)
+}
+
+func TestReappearHash(t *testing.T) {
+	s, ipfs, _ := createMockService(t)
+	h1 := ipfs.addFileEntry("h1")
+
+	s.ipfsc.WritePinningManifest("set1.eth", &PinningManifest{Pin: []string{h1}})
+	pinned, unpinned, errors, err := s.Sync([]string{"set1.eth"})
+	assert.Equal(t, 0, errors)
+	assert.Equal(t, 1, pinned)
+	assert.Equal(t, 0, unpinned)
+	assert.Nil(t, err)
+
+	s.ipfsc.WritePinningManifest("set1.eth", &PinningManifest{Pin: []string{}})
+	pinned, unpinned, errors, err = s.Sync([]string{"set1.eth"})
+	assert.Equal(t, 0, errors)
+	assert.Equal(t, 0, pinned)
+	assert.Equal(t, 1, unpinned)
+	assert.Nil(t, err)
+
+	s.ipfsc.WritePinningManifest("set1.eth", &PinningManifest{Pin: []string{h1}})
+	pinned, unpinned, errors, err = s.Sync([]string{"set1.eth"})
+	assert.Equal(t, 0, errors)
+	assert.Equal(t, 1, pinned)
+	assert.Equal(t, 0, unpinned)
 	assert.Nil(t, err)
 }

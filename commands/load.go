@@ -26,7 +26,7 @@ var (
 	storage    *sto.Storage
 )
 
-func load(withStorage bool) error {
+func load(withPrivateKey bool) error {
 
 	if ipfsc != nil {
 		// already initialized
@@ -35,17 +35,15 @@ func load(withStorage bool) error {
 
 	var err error
 
-	if withStorage {
-		if err = loadStorage(); err != nil {
-			return err
-		}
+	if err = loadStorage(); err != nil {
+		return err
 	}
 
 	if err = loadEthClients(); err != nil {
 		return err
 	}
 
-	return loadIPFSC()
+	return loadIPFSC(withPrivateKey)
 
 }
 
@@ -59,21 +57,26 @@ func loadStorage() error {
 
 }
 
-func loadIPFSC() error {
+func loadIPFSC(withPrivateKey bool) (err error) {
 
-	// load ens.
+	var ks *keystore.KeyStore
+	var account accounts.Account
 
-	ks := keystore.NewKeyStore(cfg.C.Keystore.Path, keystore.StandardScryptN, keystore.StandardScryptP)
-	account, err := ks.Find(accounts.Account{
-		Address: common.HexToAddress(cfg.C.Keystore.Account),
-	})
-	if err != nil {
-		return err
-	}
+	if withPrivateKey {
 
-	err = ks.Unlock(account, cfg.C.Keystore.Passwd)
-	if err != nil {
-		return err
+		ks := keystore.NewKeyStore(cfg.C.Keystore.Path, keystore.StandardScryptN, keystore.StandardScryptP)
+		account, err = ks.Find(accounts.Account{
+			Address: common.HexToAddress(cfg.C.Keystore.Account),
+		})
+		if err != nil {
+			return err
+		}
+
+		err = ks.Unlock(account, cfg.C.Keystore.Passwd)
+		if err != nil {
+			return err
+		}
+
 	}
 
 	ensClient := ethclients[cfg.C.EnsNames.Network]
@@ -103,7 +106,6 @@ func loadIPFSC() error {
 	ipfsc = service.NewIPFSCClient(ipfs, ensclient)
 
 	return nil
-
 }
 
 func loadEthClients() error {

@@ -20,13 +20,15 @@ type configBase struct {
 	Type string `json:"type"`
 }
 
+type ConsortiumMember struct {
+	EnsName string `json:"ensname"`
+	Quotum  string `json:"quotum"`
+}
+
 type ConsortiumManifest struct {
 	configBase
 	Quotum  string `json:"quotum"`
-	Members []struct {
-		EnsName string `json:"ensname"`
-		Quotum  string `json:"quotum"`
-	}
+	Members []ConsortiumMember
 }
 
 type PinningManifest struct {
@@ -109,9 +111,31 @@ func (i *Ipfsc) Read(ensname string) (interface{}, error) {
 	return manifest, nil
 }
 
-func (i *Ipfsc) Write(ensname string, manifest *PinningManifest) error {
+func (i *Ipfsc) WritePinningManifest(ensname string, manifest *PinningManifest) error {
 
 	manifest.Type = pinningType
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		return err
+	}
+
+	log.Info("Adding manifest to IPFS")
+	ipfshash, err := i.ipfs.Add(bytes.NewReader(encoded))
+	if err != nil {
+		return err
+	}
+
+	log.WithField("hash", ipfshash).Info("Writing manifest IPFS to ENS")
+	err = i.ens.SetText(ensname, DefaultManifestKey, ipfshash)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (i *Ipfsc) WriteConsortiumManifest(ensname string, manifest *ConsortiumManifest) error {
+
+	manifest.Type = consortiumType
 	encoded, err := json.Marshal(manifest)
 	if err != nil {
 		return err
