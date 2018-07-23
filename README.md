@@ -22,7 +22,8 @@ Available Commands:
   init        Initialize ipfsc
   ls          Info of local ens
   rm          Remove hash to IPFS
-  sync        Sync
+  sync-loop   Looping sync forever
+  sync-once   Sync one shot
 
 Flags:
       --config string    config file
@@ -64,6 +65,7 @@ db:
 
 ipfs:
   apiurl: <the URL of the IPFS api, eg: http://localhost:5001>
+  timeout: <time of IPFS connection timeout, e.g. 60s>
 
 networks:
   <networkid, 1 for mainnet>: //
@@ -93,7 +95,14 @@ Note:  to create a keystore you can use `geth account new`
 
 ### PIN other ENS IPFS manifest entries to your local IPFS
 
-- `gipc sync` 
+- `gipc sync-loop` (sync continuosuly) 
+- `gipc sync-once` (sync one time) 
+
+
+
+
+
+
 
 
 
