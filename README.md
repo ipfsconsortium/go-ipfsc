@@ -93,7 +93,14 @@ Note:  to create a keystore you can use `geth account new`
 
 ### PIN other ENS IPFS manifest entries to your local IPFS
 
-- `gipc sync` 
+- `gipc sync-loop` (sync continuosuly) 
+- `gipc sync-once` (sync one time) 
+
+
+
+
+
+
 
 
 
