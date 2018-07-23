@@ -7,9 +7,8 @@ import (
 	"time"
 
 	cfg "github.com/ipfsconsortium/gipc/config"
-	ens "github.com/ipfsconsortium/gipc/ens"
 	eth "github.com/ipfsconsortium/gipc/eth"
-	ipfsclient "github.com/ipfsconsortium/gipc/ipfsc"
+	"github.com/ipfsconsortium/gipc/service"
 	sto "github.com/ipfsconsortium/gipc/storage"
 	log "github.com/sirupsen/logrus"
 
@@ -23,7 +22,7 @@ import (
 
 var (
 	ethclients map[uint64]*ethclient.Client
-	ipfsc      *ipfsclient.Ipfsc
+	ipfsc      *service.Ipfsc
 	storage    *sto.Storage
 )
 
@@ -82,7 +81,7 @@ func loadIPFSC() error {
 
 	web3 := eth.NewWeb3Client(ensClient, ks, &account)
 	web3.ClientMutex = &sync.Mutex{}
-	ensclient, err := ens.New(web3, &ensAddr)
+	ensclient, err := service.NewENSClient(web3, &ensAddr)
 	if err != nil {
 		return err
 	}
@@ -101,7 +100,7 @@ func loadIPFSC() error {
 		return fmt.Errorf("Cannot connect with local IPFS node")
 	}
 
-	ipfsc = ipfsclient.New(ipfs, ensclient)
+	ipfsc = service.NewIPFSCClient(ipfs, ensclient)
 
 	return nil
 

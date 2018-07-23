@@ -36,6 +36,13 @@ var syncCmd = &cobra.Command{
 	Run:   cmd.Sync,
 }
 
+var syncOnceCmd = &cobra.Command{
+	Use:   "sync",
+	Short: "Sync",
+	Long:  "Sync",
+	Run:   cmd.Sync,
+}
+
 var dbDumpCmd = &cobra.Command{
 	Use:   "db-dump",
 	Short: "Dumps the database",

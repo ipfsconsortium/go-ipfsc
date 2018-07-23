@@ -1,13 +1,13 @@
-package ipfsc
+package service
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 
 	shell "github.com/adriamb/go-ipfs-api"
-	ens "github.com/ipfsconsortium/gipc/ens"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -40,8 +40,16 @@ const (
 )
 
 type Ipfsc struct {
-	ipfs *shell.Shell
-	ens  *ens.ENSClient
+	ipfs IPFSClient
+	ens  ENSClient
+}
+
+type IPFSClient interface {
+	Cat(path string) (io.ReadCloser, error)
+	Add(r io.Reader) (string, error)
+	ObjectGet(path string) (*shell.IpfsObject, error)
+	Pin(path string, recursive bool) error
+	Unpin(path string) error
 }
 
 func parse(data []byte) (interface{}, error) {
@@ -71,7 +79,7 @@ func parse(data []byte) (interface{}, error) {
 	return nil, fmt.Errorf("Uknown manifest type %v", cfg.Type)
 }
 
-func New(ipfs *shell.Shell, ens *ens.ENSClient) *Ipfsc {
+func NewIPFSCClient(ipfs IPFSClient, ens ENSClient) *Ipfsc {
 	return &Ipfsc{ipfs, ens}
 }
 
@@ -121,13 +129,12 @@ func (i *Ipfsc) Write(ensname string, manifest *PinningManifest) error {
 		return err
 	}
 	return nil
-
 }
 
-func (i *Ipfsc) IPFS() *shell.Shell {
+func (i *Ipfsc) IPFS() IPFSClient {
 	return i.ipfs
 }
 
-func (i *Ipfsc) ENS() *ens.ENSClient {
+func (i *Ipfsc) ENS() ENSClient {
 	return i.ens
 }

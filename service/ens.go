@@ -1,4 +1,4 @@
-package eth
+package service
 
 import (
 	"bytes"
@@ -49,12 +49,18 @@ func NameHash(name string) common.Hash {
 	)
 }
 
-type ENSClient struct {
+type ENSClient interface {
+	Info(name string) (string, error)
+	Text(name, key string) (string, error)
+	SetText(name, key, text string) error
+}
+
+type ENSClientImpl struct {
 	root     *eth.Contract
 	resolver abi.ABI
 }
 
-func New(client *eth.Web3Client, address *common.Address) (*ENSClient, error) {
+func NewENSClient(client *eth.Web3Client, address *common.Address) (ENSClient, error) {
 
 	rootabi, err := abi.JSON(bytes.NewReader([]byte(ensEthNameServiceAbi)))
 	root, err := eth.NewContract(client, &rootabi, nil, address)
@@ -64,10 +70,10 @@ func New(client *eth.Web3Client, address *common.Address) (*ENSClient, error) {
 		return nil, err
 	}
 
-	return &ENSClient{root, resolverabi}, err
+	return &ENSClientImpl{root, resolverabi}, err
 }
 
-func (e *ENSClient) Info(name string) (string, error) {
+func (e *ENSClientImpl) Info(name string) (string, error) {
 
 	info := ""
 
@@ -88,7 +94,7 @@ func (e *ENSClient) Info(name string) (string, error) {
 	return info, nil
 }
 
-func (e *ENSClient) Text(name, key string) (string, error) {
+func (e *ENSClientImpl) Text(name, key string) (string, error) {
 
 	namehash := NameHash(name)
 
@@ -112,7 +118,7 @@ func (e *ENSClient) Text(name, key string) (string, error) {
 
 }
 
-func (e *ENSClient) SetText(name, key, text string) error {
+func (e *ENSClientImpl) SetText(name, key, text string) error {
 
 	namehash := NameHash(name)
 
