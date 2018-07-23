@@ -8,9 +8,10 @@ import (
 )
 
 const (
-	prefixHash    = "H"
-	prefixMember  = "C"
-	prefixGlobals = "G"
+	prefixHash     = "H"
+	prefixMember   = "C"
+	prefixGlobals  = "G"
+	prefixResolves = "R"
 )
 
 var (

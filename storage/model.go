@@ -1,8 +1,10 @@
 package storage
 
 type HashEntry struct {
-	Members  []string
 	DataSize uint
+	Links    []string
+	Mark     bool
+	Dirty    bool
 }
 
 type MemberEntry struct {
@@ -18,4 +20,8 @@ type SavePointEntry struct {
 	LastBlock    uint64
 	LastTxIndex  uint
 	LastLogIndex uint
+}
+
+type ResolvesEntry struct {
+	Entries []string
 }

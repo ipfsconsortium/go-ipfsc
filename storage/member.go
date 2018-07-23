@@ -69,9 +69,11 @@ func (s *Storage) AddMember(member string) error {
 func (s *Storage) RemoveMember(member string) error {
 	key := append([]byte(prefixMember), []byte(member)[:]...)
 	_, err := s.db.Get(key, nil)
-
-	if err != nil {
+	if err == dberr.ErrNotFound {
 		return ErrKeyNotExists
+	}
+	if err != nil {
+		return err
 	}
 
 	log.WithField("member", member).Debug("DB removed member")

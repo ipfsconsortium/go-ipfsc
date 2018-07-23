@@ -1,13 +1,13 @@
-package ipfsc
+package service
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 
 	shell "github.com/adriamb/go-ipfs-api"
-	ens "github.com/ipfsconsortium/gipc/ens"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -20,13 +20,15 @@ type configBase struct {
 	Type string `json:"type"`
 }
 
+type ConsortiumMember struct {
+	EnsName string `json:"ensname"`
+	Quotum  string `json:"quotum"`
+}
+
 type ConsortiumManifest struct {
 	configBase
 	Quotum  string `json:"quotum"`
-	Members []struct {
-		EnsName string `json:"ensname"`
-		Quotum  string `json:"quotum"`
-	}
+	Members []ConsortiumMember
 }
 
 type PinningManifest struct {
@@ -36,12 +38,20 @@ type PinningManifest struct {
 }
 
 const (
-	manifestKey = "consortiumManifest"
+	DefaultManifestKey = "consortiumManifest"
 )
 
 type Ipfsc struct {
-	ipfs *shell.Shell
-	ens  *ens.ENSClient
+	ipfs IPFSClient
+	ens  ENSClient
+}
+
+type IPFSClient interface {
+	Cat(path string) (io.ReadCloser, error)
+	Add(r io.Reader) (string, error)
+	ObjectGet(path string) (*shell.IpfsObject, error)
+	Pin(path string, recursive bool) error
+	Unpin(path string) error
 }
 
 func parse(data []byte) (interface{}, error) {
@@ -71,14 +81,14 @@ func parse(data []byte) (interface{}, error) {
 	return nil, fmt.Errorf("Uknown manifest type %v", cfg.Type)
 }
 
-func New(ipfs *shell.Shell, ens *ens.ENSClient) *Ipfsc {
+func NewIPFSCClient(ipfs IPFSClient, ens ENSClient) *Ipfsc {
 	return &Ipfsc{ipfs, ens}
 }
 
 func (i *Ipfsc) Read(ensname string) (interface{}, error) {
 
 	log.WithField("ensname", ensname).Info("Reading IPFS key from ENS")
-	ipfshash, err := i.ens.Text(ensname, manifestKey)
+	ipfshash, err := i.ens.Text(ensname, DefaultManifestKey)
 	if err != nil {
 		return nil, err
 	}
@@ -99,10 +109,9 @@ func (i *Ipfsc) Read(ensname string) (interface{}, error) {
 	}
 
 	return manifest, nil
-
 }
 
-func (i *Ipfsc) Write(ensname string, manifest *PinningManifest) error {
+func (i *Ipfsc) WritePinningManifest(ensname string, manifest *PinningManifest) error {
 
 	manifest.Type = pinningType
 	encoded, err := json.Marshal(manifest)
@@ -117,18 +126,39 @@ func (i *Ipfsc) Write(ensname string, manifest *PinningManifest) error {
 	}
 
 	log.WithField("hash", ipfshash).Info("Writing manifest IPFS to ENS")
-	err = i.ens.SetText(ensname, manifestKey, ipfshash)
+	err = i.ens.SetText(ensname, DefaultManifestKey, ipfshash)
 	if err != nil {
 		return err
 	}
 	return nil
-
 }
 
-func (i *Ipfsc) IPFS() *shell.Shell {
+func (i *Ipfsc) WriteConsortiumManifest(ensname string, manifest *ConsortiumManifest) error {
+
+	manifest.Type = consortiumType
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		return err
+	}
+
+	log.Info("Adding manifest to IPFS")
+	ipfshash, err := i.ipfs.Add(bytes.NewReader(encoded))
+	if err != nil {
+		return err
+	}
+
+	log.WithField("hash", ipfshash).Info("Writing manifest IPFS to ENS")
+	err = i.ens.SetText(ensname, DefaultManifestKey, ipfshash)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (i *Ipfsc) IPFS() IPFSClient {
 	return i.ipfs
 }
 
-func (i *Ipfsc) ENS() *ens.ENSClient {
+func (i *Ipfsc) ENS() ENSClient {
 	return i.ens
 }

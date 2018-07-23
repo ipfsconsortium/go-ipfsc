@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	cfg "github.com/ipfsconsortium/gipc/config"
-	ipfsclient "github.com/ipfsconsortium/gipc/ipfsc"
 	"github.com/ipfsconsortium/gipc/service"
 	sto "github.com/ipfsconsortium/gipc/storage"
 	log "github.com/sirupsen/logrus"
@@ -40,8 +39,7 @@ func InitDb(cmd *cobra.Command, args []string) {
 
 func IpfscLs(cmd *cobra.Command, args []string) {
 
-	must(loadEthClients())
-	must(loadIPFSC())
+	must(load(false))
 
 	info, err := ipfsc.ENS().Info(cfg.C.EnsNames.Local)
 	if err != nil {
@@ -54,7 +52,7 @@ func IpfscLs(cmd *cobra.Command, args []string) {
 		fmt.Println(info)
 		return
 	}
-	pinningManifest := manifest.(*ipfsclient.PinningManifest)
+	pinningManifest := manifest.(*service.PinningManifest)
 	for _, ipfshash := range pinningManifest.Pin {
 		info += "\nPin: " + ipfshash
 	}
@@ -63,15 +61,14 @@ func IpfscLs(cmd *cobra.Command, args []string) {
 
 func IpfscInit(cmd *cobra.Command, args []string) {
 
-	must(loadEthClients())
-	must(loadIPFSC())
+	must(load(true))
 
 	quotum := args[0]
 
-	var manifest ipfsclient.PinningManifest
+	var manifest service.PinningManifest
 	manifest.Quotum = quotum
 
-	if err := ipfsc.Write(cfg.C.EnsNames.Local, &manifest); err != nil {
+	if err := ipfsc.WritePinningManifest(cfg.C.EnsNames.Local, &manifest); err != nil {
 		log.Error("Failed to init ", err)
 		return
 	}
@@ -81,8 +78,7 @@ func IpfscInit(cmd *cobra.Command, args []string) {
 
 func IpfscAdd(cmd *cobra.Command, args []string) {
 
-	must(loadEthClients())
-	must(loadIPFSC())
+	must(load(true))
 
 	m, err := ipfsc.Read(cfg.C.EnsNames.Local)
 	if err != nil {
@@ -90,7 +86,7 @@ func IpfscAdd(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	manifest := m.(*ipfsclient.PinningManifest)
+	manifest := m.(*service.PinningManifest)
 	for _, entry := range args {
 
 		var ipfsHash string
@@ -114,7 +110,7 @@ func IpfscAdd(cmd *cobra.Command, args []string) {
 		manifest.Pin = append(manifest.Pin, ipfsHash)
 	}
 
-	if err := ipfsc.Write(cfg.C.EnsNames.Local, manifest); err != nil {
+	if err := ipfsc.WritePinningManifest(cfg.C.EnsNames.Local, manifest); err != nil {
 		log.Error("Failed to write manifest ", err)
 		return
 	}
@@ -123,8 +119,7 @@ func IpfscAdd(cmd *cobra.Command, args []string) {
 
 func IpfscRemove(cmd *cobra.Command, args []string) {
 
-	must(loadEthClients())
-	must(loadIPFSC())
+	must(load(true))
 
 	m, err := ipfsc.Read(cfg.C.EnsNames.Local)
 	if err != nil {
@@ -137,27 +132,37 @@ func IpfscRemove(cmd *cobra.Command, args []string) {
 		remove[ipfshash] = true
 	}
 
-	manifest := m.(*ipfsclient.PinningManifest)
+	manifest := m.(*service.PinningManifest)
 	for i, ipfshash := range args {
 		if _, ok := remove[ipfshash]; !ok {
 			manifest.Pin = append(manifest.Pin[:i], manifest.Pin[i+1:]...)
 		}
 	}
 
-	if err := ipfsc.Write(cfg.C.EnsNames.Local, manifest); err != nil {
+	if err := ipfsc.WritePinningManifest(cfg.C.EnsNames.Local, manifest); err != nil {
 		log.Error("Failed to write manifest ", err)
 		return
 	}
 	log.Info("Manifest sucessfully updated")
 }
 
-// Serve command
-func Sync(cmd *cobra.Command, args []string) {
+func SyncLoop(cmd *cobra.Command, args []string) {
 
-	must(load(true))
+	must(load(false))
+
+	for {
+		service.NewService(
+			ipfsc, storage,
+		).Sync(cfg.C.EnsNames.Remotes)
+	}
+}
+
+func SyncOnce(cmd *cobra.Command, args []string) {
+
+	must(load(false))
 
 	service.NewService(
 		ipfsc, storage,
-	).Sync()
+	).Sync(cfg.C.EnsNames.Remotes)
 
 }

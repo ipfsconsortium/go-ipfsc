@@ -7,9 +7,8 @@ import (
 	"time"
 
 	cfg "github.com/ipfsconsortium/gipc/config"
-	ens "github.com/ipfsconsortium/gipc/ens"
 	eth "github.com/ipfsconsortium/gipc/eth"
-	ipfsclient "github.com/ipfsconsortium/gipc/ipfsc"
+	"github.com/ipfsconsortium/gipc/service"
 	sto "github.com/ipfsconsortium/gipc/storage"
 	log "github.com/sirupsen/logrus"
 
@@ -23,11 +22,11 @@ import (
 
 var (
 	ethclients map[uint64]*ethclient.Client
-	ipfsc      *ipfsclient.Ipfsc
+	ipfsc      *service.Ipfsc
 	storage    *sto.Storage
 )
 
-func load(withStorage bool) error {
+func load(withPrivateKey bool) error {
 
 	if ipfsc != nil {
 		// already initialized
@@ -36,17 +35,15 @@ func load(withStorage bool) error {
 
 	var err error
 
-	if withStorage {
-		if err = loadStorage(); err != nil {
-			return err
-		}
+	if err = loadStorage(); err != nil {
+		return err
 	}
 
 	if err = loadEthClients(); err != nil {
 		return err
 	}
 
-	return loadIPFSC()
+	return loadIPFSC(withPrivateKey)
 
 }
 
@@ -60,21 +57,26 @@ func loadStorage() error {
 
 }
 
-func loadIPFSC() error {
+func loadIPFSC(withPrivateKey bool) (err error) {
 
-	// load ens.
+	var ks *keystore.KeyStore
+	var account accounts.Account
 
-	ks := keystore.NewKeyStore(cfg.C.Keystore.Path, keystore.StandardScryptN, keystore.StandardScryptP)
-	account, err := ks.Find(accounts.Account{
-		Address: common.HexToAddress(cfg.C.Keystore.Account),
-	})
-	if err != nil {
-		return err
-	}
+	if withPrivateKey {
 
-	err = ks.Unlock(account, cfg.C.Keystore.Passwd)
-	if err != nil {
-		return err
+		ks := keystore.NewKeyStore(cfg.C.Keystore.Path, keystore.StandardScryptN, keystore.StandardScryptP)
+		account, err = ks.Find(accounts.Account{
+			Address: common.HexToAddress(cfg.C.Keystore.Account),
+		})
+		if err != nil {
+			return err
+		}
+
+		err = ks.Unlock(account, cfg.C.Keystore.Passwd)
+		if err != nil {
+			return err
+		}
+
 	}
 
 	ensClient := ethclients[cfg.C.EnsNames.Network]
@@ -82,7 +84,7 @@ func loadIPFSC() error {
 
 	web3 := eth.NewWeb3Client(ensClient, ks, &account)
 	web3.ClientMutex = &sync.Mutex{}
-	ensclient, err := ens.New(web3, &ensAddr)
+	ensclient, err := service.NewENSClient(web3, &ensAddr)
 	if err != nil {
 		return err
 	}
@@ -101,10 +103,9 @@ func loadIPFSC() error {
 		return fmt.Errorf("Cannot connect with local IPFS node")
 	}
 
-	ipfsc = ipfsclient.New(ipfs, ensclient)
+	ipfsc = service.NewIPFSCClient(ipfs, ensclient)
 
 	return nil
-
 }
 
 func loadEthClients() error {

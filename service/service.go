@@ -3,16 +3,15 @@ package service
 import (
 	"errors"
 	"fmt"
-	"strconv"
+	"strings"
+	"time"
 
-	cfg "github.com/ipfsconsortium/gipc/config"
-	ipfsc "github.com/ipfsconsortium/gipc/ipfsc"
 	sto "github.com/ipfsconsortium/gipc/storage"
 	log "github.com/sirupsen/logrus"
 )
 
 type Service struct {
-	ipfsc   *ipfsc.Ipfsc
+	ipfsc   *Ipfsc
 	storage *sto.Storage
 }
 
@@ -22,202 +21,220 @@ var (
 	errReachedPersistLimit = errors.New("persistlimit reached")
 )
 
-func NewService(ipfsc *ipfsc.Ipfsc, storage *sto.Storage) *Service {
+func NewService(ipfsc *Ipfsc, storage *sto.Storage) *Service {
 	return &Service{ipfsc, storage}
 }
 
-func (s *Service) syncConsortiumManifest(member string, m *ipfsc.ConsortiumManifest, quotum *int) {
+func (s *Service) collectENS(expr, path string) (pinned, unpinned, errors int) {
 
-	for _, member := range m.Members {
+	log.Info("Collecting[ens] " + path + ">" + expr)
 
-		log.WithFields(log.Fields{
-			"member": member.EnsName,
-			"quotum": member.Quotum,
-		}).Info("Processing member")
-
-		quotum, err := strconv.Atoi(member.Quotum)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"member": member.EnsName,
-			}).Error("Bad member quotum")
-			continue
-		}
-
-		err = s.syncEnsName(member.EnsName, &quotum)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"member": member.EnsName,
-				"err":    err,
-			}).Error("Error processing member")
-		}
-
-	}
-}
-
-func (s *Service) syncPinningManifest(member string, m *ipfsc.PinningManifest, quotum *int) {
-
-	if quotum == nil {
-		localquotum, err := strconv.Atoi(m.Quotum)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"quotum": m.Quotum,
-				"err":    err,
-			}).Error("Invalid quota, unable to process")
-			return
-		}
-		quotum = &localquotum
-	}
-
-	for i, ipfshash := range m.Pin {
-		log.WithField("c", fmt.Sprintf("%v/%v", i, len(m.Pin))).Info("Processing manifest")
-		if err := s.addHash(member, ipfshash, *quotum); err != nil {
-			log.WithFields(log.Fields{
-				"hash": ipfshash,
-				"err":  err,
-			}).Error("Failed adding hash")
-		}
-	}
-}
-
-func (s *Service) syncEnsName(ensname string, quotum *int) error {
-
-	manifest, err := s.ipfsc.Read(ensname)
+	enskey, textkey, err := parseENSEntry(expr)
 	if err != nil {
-		return err
+		log.WithError(err).Warn("Error parsing ens " + expr)
+		return 0, 0, 1
 	}
+
+	// Parse an ENS entry
+	if textkey != "" && textkey != DefaultManifestKey {
+		// an IPFS hash stored in ENS
+		expr, err := s.ipfsc.ENS().Text(enskey, textkey)
+		if err != nil {
+			log.WithError(err).Warn("Failed to get " + expr)
+			return 0, 0, 1
+		}
+		return s.collect(expr, enskey+">"+path)
+	}
+
+	// Parse manifest entry
+	manifest, err := s.ipfsc.Read(expr)
+	if err != nil {
+		log.WithError(err).Warn("Failed to get " + expr)
+		return 0, 0, 1
+	}
+
+	pinned, unpinned, errors = 0, 0, 0
 
 	switch v := manifest.(type) {
-	case *ipfsc.ConsortiumManifest:
-		s.syncConsortiumManifest(ensname, v, quotum)
-	case *ipfsc.PinningManifest:
-		s.syncPinningManifest(ensname, v, quotum)
+
+	case *ConsortiumManifest:
+		for _, member := range v.Members {
+			Δpinned, Δunpinned, Δerrros := s.collect(member.EnsName, path+">"+member.EnsName)
+			pinned += Δpinned
+			unpinned += Δunpinned
+			errors += Δerrros
+
+		}
+		return pinned, unpinned, errors
+
+	case *PinningManifest:
+		for i, entry := range v.Pin {
+			Δpinned, Δunpinned, Δerrros := s.collect(entry, fmt.Sprintf("%v/%v(#%v)", path, expr, i))
+			pinned += Δpinned
+			unpinned += Δunpinned
+			errors += Δerrros
+
+		}
+		return pinned, unpinned, errors
+
 	default:
-		return fmt.Errorf("Unknown manifest type")
+		log.Warn("Unable to parse manifest " + expr)
+		return 1, 0, 0
 	}
-	return nil
+
 }
 
-func (s *Service) addHash(member, ipfsHash string, quotum int) error {
-
-	var err error
-
-	log.WithFields(log.Fields{
-		"hash": ipfsHash,
-	}).Info("SERVE addHash")
-
-	entry, _ := s.storage.Hash(ipfsHash)
-
-	if entry != nil {
-
-		for _, m := range entry.Members {
-			if m == member {
-				log.WithField("hash", ipfsHash).Info("Already pinned by this member")
-				return nil
-			}
+func parseENSEntry(expr string) (enskey, textkey string, err error) {
+	if strings.Contains(expr, "[") {
+		sp1 := strings.Split(expr, "[")
+		if len(sp1) != 2 {
+			return "", "", errors.New("Ill formed ENS name")
 		}
-		log.WithField("hash", ipfsHash).Info("Object pinned by other members")
-
-		err = s.storage.AddHash(
-			member, ipfsHash,
-			entry.DataSize,
-		)
-
+		sp2 := strings.Split(sp1[1], "]")
+		if len(sp2) != 2 || len(sp2[1]) != 0 {
+			return "", "", errors.New("Ill formed ENS name")
+		}
+		enskey = sp2[0]
+		textkey = sp1[0]
 	} else {
-
-		// get the size & pin
-		stats, err := s.ipfsc.IPFS().ObjectStat(ipfsHash)
-		if err != nil {
-			log.WithError(err).Error("Failed to ipfs.ObjectStat")
-			return err
-		}
-		log.WithFields(log.Fields{
-			"hash": ipfsHash,
-			"size": stats.DataSize,
-		}).Info("Retrieved object size")
-
-		log.WithFields(log.Fields{
-			"hash":     ipfsHash,
-			"datasize": stats.DataSize,
-		}).Debug("IPFS stats")
-
-		globals, err := s.storage.Globals()
-		if err != nil {
-			log.WithError(err).Error("Failed to get storage globals")
-			return err
-		}
-
-		requieredLimit := int(globals.CurrentQuota) + int(stats.DataSize)
-		if requieredLimit > quotum {
-			log.WithFields(log.Fields{
-				"hash":      ipfsHash,
-				"current":   globals.CurrentQuota,
-				"requiered": requieredLimit,
-			}).Error(errReachedPersistLimit)
-
-			return errReachedPersistLimit
-		}
-
-		err = s.ipfsc.IPFS().Pin(ipfsHash, false)
-		if err != nil {
-			return err
-		}
-		log.WithFields(log.Fields{
-			"Hash": ipfsHash,
-		}).Debug("IPFS pinning ok")
-
-		// store in the DB
-		err = s.storage.AddHash(
-			member, ipfsHash,
-			uint(stats.DataSize),
-		)
-
+		enskey = expr
+		textkey = ""
 	}
-
-	return err
+	return enskey, textkey, nil
 }
 
-func (s *Service) removeHash(member, ipfsHash string) error {
+func (s *Service) collectIPFS(expr, path string) (pinned, unpinned, errors int) {
+	log.Info("Collecting[ipfs] " + path + ">" + expr)
+
+	pinned, unpinned, errors = 0, 0, 0
+
+	// if information is available in local db, use it
+	hentry, _ := s.storage.Hash(expr)
+	if hentry != nil && !hentry.Dirty {
+		if hentry.Mark {
+			// if already marked, has been also already recursevlly marked
+			return 0, 0, 0
+		}
+		hentry.Mark = true
+		hentry.Dirty = false
+
+		if err := s.storage.UpdateHash(expr, hentry); err != nil {
+			log.WithError(err).Warn("Failed to update hash db")
+			return 0, 0, 1
+		}
+		for _, linkhash := range hentry.Links {
+			Δpinned, Δunpinned, Δerrros := s.collectIPFS(linkhash, path+">"+expr+"()")
+			pinned += Δpinned
+			unpinned += Δunpinned
+			errors += Δerrros
+		}
+		return pinned, unpinned, errors
+	}
+
+	// object is not in the database, so get data from it
+	start := time.Now()
+	err := s.ipfsc.IPFS().Pin(expr, false)
+	if err != nil {
+		log.WithError(err).Warn("Unable to get object " + expr)
+		return 0, 0, 1
+	}
+
+	ipfsObject, err := s.ipfsc.IPFS().ObjectGet(expr)
+	if err != nil {
+		log.WithError(err).Warn("Unable to get object " + expr)
+		return 0, 0, 1
+	}
+	pinned++
 
 	log.WithFields(log.Fields{
-		"hash": ipfsHash,
-	}).Info("SERVE removeHash")
+		"#links":    len(ipfsObject.Links),
+		"len(data)": len(ipfsObject.Data),
+	}).Info("Got Objectats in ", time.Since(start))
 
-	// remove from DB
-	isLastHash, err := s.storage.RemoveHash(member, ipfsHash)
+	var links []string
+	if len(ipfsObject.Links) > 0 && ipfsObject.Links[0].Name != "" {
+		links = make([]string, len(ipfsObject.Links))
+		for i, link := range ipfsObject.Links {
+			links[i] = link.Hash
+			Δpinned, Δunpinned, Δerrors := s.collectIPFS(link.Hash, path+">"+expr+"("+link.Name+")")
+			pinned += Δpinned
+			unpinned += Δunpinned
+			errors += Δerrors
+		}
+	}
+
+	if err = s.storage.UpdateHash(expr, &sto.HashEntry{
+		DataSize: 0,
+		Links:    links,
+		Mark:     true,
+		Dirty:    false,
+	}); err != nil {
+		log.WithError(err).Warn("Failed to add hash " + expr)
+		return pinned, unpinned, errors + 1
+	}
+
+	return pinned, unpinned, errors
+}
+
+func (s *Service) collect(expr, path string) (pinned, unpinned, errors int) {
+
+	if strings.HasPrefix(expr, "/ipfs/") {
+		return s.collectIPFS(expr, path)
+	} else if strings.HasPrefix(expr, "0x") {
+		// handle contract, TODO
+	} else if strings.Contains(expr, ".eth") {
+		return s.collectENS(expr, path)
+	}
+	log.Warn("Unable to find resolver to sync '" + expr + "'")
+	return 0, 0, 1
+}
+
+func (s *Service) Sync(ensnames []string) (pinned, unpinned, errors int, err error) {
+
+	/* unmark all hashes */
+	err = s.storage.HashUpdateIter(func(_ string, entry *sto.HashEntry) *sto.HashEntry {
+		if entry.Mark {
+			entry.Mark = false
+			return entry
+		}
+		return nil
+	})
+
 	if err != nil {
-		return err
+		return 0, 0, 0, err
 	}
 
-	if isLastHash {
-		// is the last has registerer in a contract, unpin it
-		s.ipfsc.IPFS().Unpin(ipfsHash)
-		if err != nil {
-			log.Warn("IPFS says that hash ", ipfsHash, " is not pinned.")
-		}
-	}
-
-	return nil
-}
-
-func (s *Service) serve() {
-	for _, name := range cfg.C.EnsNames.Remotes {
+	/* discover, and mark hashes that needs to be pinned */
+	pinned, unpinned, errors = 0, 0, 0
+	for _, expr := range ensnames {
 		log.WithFields(log.Fields{
-			"ens":  name,
-			"ipfs": name,
-		}).Info("Processing ENS name")
+			"expr": expr,
+		}).Info("Processing entries")
 
-		err := s.syncEnsName(name, nil)
+		Δpinned, Δunpinned, Δerrors := s.collect(expr, "")
+		pinned += Δpinned
+		unpinned += Δunpinned
+		errors += Δerrors
+	}
+
+	if errors == 0 {
+		/* No errors, unpin the unused hashes and mark as deleted */
+		err = s.storage.HashUpdateIter(func(hash string, entry *sto.HashEntry) *sto.HashEntry {
+			if !entry.Mark {
+				if err := s.ipfsc.IPFS().Unpin(hash); err != nil {
+					log.WithError(err).Warn("Failed to unpin " + hash)
+				}
+				unpinned++
+				entry.Dirty = true
+				return entry
+			}
+			return nil
+		})
 
 		if err != nil {
-			log.WithFields(log.Fields{
-				"ens":   name,
-				"error": err,
-			}).Error("Cannot process name")
+			return 0, 0, 0, err
 		}
-	}
-}
 
-func (s *Service) Sync() error {
-	s.serve()
-	return nil
+	}
+	return pinned, unpinned, errors, nil
 }

@@ -26,17 +26,16 @@ func (s *Storage) Dump(w io.Writer) {
 		case isPrefix(key, prefixHash):
 
 			w.Write([]byte(fmt.Sprintf("HASH %v", string(key[len(prefixHash):]))))
-
 			var entry HashEntry
 			err := rlp.DecodeBytes(value, &entry)
 			if err != nil {
 				w.Write([]byte("| *READ ERROR"))
 				break
 			}
-
-			w.Write([]byte(fmt.Sprintf(" size=%v\n", entry.DataSize)))
-			for _, member := range entry.Members {
-				w.Write([]byte(fmt.Sprintf("| MEMBER %v\n", member)))
+			w.Write([]byte(fmt.Sprintf("| dirty=%v", entry.Dirty)))
+			w.Write([]byte(fmt.Sprintf("| mark=%v", entry.Mark)))
+			for _, h := range entry.Links {
+				w.Write([]byte(fmt.Sprintf("| %v", h)))
 			}
 
 		case isPrefix(key, prefixMember):

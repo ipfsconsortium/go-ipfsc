@@ -29,11 +29,18 @@ var RootCmd = &cobra.Command{
 	},
 }
 
-var syncCmd = &cobra.Command{
-	Use:   "sync",
-	Short: "Sync",
-	Long:  "Sync",
-	Run:   cmd.Sync,
+var syncLoopCmd = &cobra.Command{
+	Use:   "sync-loop",
+	Short: "Looping sync forever",
+	Long:  "Looping sync forever",
+	Run:   cmd.SyncLoop,
+}
+
+var syncOnceCmd = &cobra.Command{
+	Use:   "sync-once",
+	Short: "Sync one shot",
+	Long:  "Sync one shot",
+	Run:   cmd.SyncOnce,
 }
 
 var dbDumpCmd = &cobra.Command{
@@ -95,7 +102,8 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file")
 	RootCmd.PersistentFlags().StringVar(&verbose, "verbose", "INFO", "verbose level")
 
-	RootCmd.AddCommand(syncCmd)
+	RootCmd.AddCommand(syncLoopCmd)
+	RootCmd.AddCommand(syncOnceCmd)
 
 	RootCmd.AddCommand(dbDumpCmd)
 	RootCmd.AddCommand(dbInitCmd)
