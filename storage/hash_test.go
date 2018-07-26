@@ -9,154 +9,110 @@ import (
 func TestAddHash(t *testing.T) {
 	s := CreateTestDB(t)
 
-	err := s.AddHash("m1", "h1", 1000)
+	err := s.AddHash("h1", &HashEntry{
+		DataSize: 1000,
+		Links:    []string{"1", "2"},
+		Mark:     true,
+		Dirty:    false,
+	})
 	assert.Nil(t, err)
 
 	h, err := s.Hash("h1")
 	assert.Nil(t, err)
 	assert.Equal(t, uint(1000), h.DataSize)
-	assert.Equal(t, 1, len(h.Members))
-	assert.Equal(t, "m1", h.Members[0])
-
-	m, err := s.Member("m1")
-	assert.Nil(t, err)
-	assert.Equal(t, uint(1000), m.DataSize)
-	assert.Equal(t, uint(1), m.HashCount)
-
-	g, err := s.Globals()
-	assert.Nil(t, err)
-	assert.Equal(t, uint(1000), g.CurrentQuota)
+	assert.Equal(t, 2, len(h.Links))
+	assert.Equal(t, "1", h.Links[0])
+	assert.Equal(t, "2", h.Links[1])
+	assert.Equal(t, true, h.Mark)
+	assert.Equal(t, false, h.Dirty)
 }
 
-func TestSameMemberTwoHashes(t *testing.T) {
-	var err error
+func TestGetUnexistentHash(t *testing.T) {
 	s := CreateTestDB(t)
-
-	err = s.AddHash("m1", "h1", 1000)
-	assert.Nil(t, err)
-	err = s.AddHash("m1", "h2", 2000)
-	assert.Nil(t, err)
-
-	m, err := s.Member("m1")
-	assert.Nil(t, err)
-	assert.Equal(t, uint(3000), m.DataSize)
-	assert.Equal(t, uint(2), m.HashCount)
-
-	g, err := s.Globals()
-	assert.Nil(t, err)
-	assert.Equal(t, uint(3000), g.CurrentQuota)
-}
-
-func TestRepeatedHashInMember(t *testing.T) {
-	var err error
-	s := CreateTestDB(t)
-
-	err = s.AddHash("m1", "h1", 1000)
-	assert.Nil(t, err)
-	err = s.AddHash("m1", "h1", 1000)
-	assert.Nil(t, err)
-
-	m, err := s.Member("m1")
-	assert.Nil(t, err)
-	assert.Equal(t, uint(1000), m.DataSize)
-	assert.Equal(t, uint(1), m.HashCount)
-
-	g, err := s.Globals()
-	assert.Nil(t, err)
-	assert.Equal(t, uint(1000), g.CurrentQuota)
-}
-
-func TestTwoMembersSameHash(t *testing.T) {
-	var err error
-	s := CreateTestDB(t)
-
-	err = s.AddHash("m1", "h1", 1000)
-	assert.Nil(t, err)
-	err = s.AddHash("m2", "h1", 1000)
-	assert.Nil(t, err)
-
-	m, err := s.Member("m1")
-	assert.Nil(t, err)
-	assert.Equal(t, uint(1000), m.DataSize)
-	assert.Equal(t, uint(1), m.HashCount)
-
-	m, err = s.Member("m2")
-	assert.Nil(t, err)
-	assert.Equal(t, uint(1000), m.DataSize)
-	assert.Equal(t, uint(1), m.HashCount)
 
 	h, err := s.Hash("h1")
 	assert.Nil(t, err)
-	assert.Equal(t, uint(1000), h.DataSize)
-	assert.Equal(t, 2, len(h.Members))
-	assert.Equal(t, "m1", h.Members[0])
-	assert.Equal(t, "m2", h.Members[1])
-
-	g, err := s.Globals()
-	assert.Nil(t, err)
-	assert.Equal(t, uint(1000), g.CurrentQuota)
-}
-func TestSameHashSizeMismatch(t *testing.T) {
-	var err error
-	s := CreateTestDB(t)
-
-	err = s.AddHash("m1", "h1", 1000)
-	assert.Nil(t, err)
-	err = s.AddHash("m2", "h1", 2000)
-	assert.Equal(t, err, ErrInconsistentSize)
+	assert.Nil(t, h)
 }
 
-func TestRemoveSharedHash(t *testing.T) {
-	var err error
+func TestDeleteHash(t *testing.T) {
 	s := CreateTestDB(t)
 
-	err = s.AddHash("m1", "h1", 1000)
-	assert.Nil(t, err)
-	err = s.AddHash("m2", "h1", 1000)
-	assert.Nil(t, err)
-	err = s.AddHash("m2", "h2", 2000)
-	assert.Nil(t, err)
-	err = s.RemoveHash("m1", "h1")
+	err := s.AddHash("h1", &HashEntry{
+		DataSize: 1000,
+		Links:    []string{"1", "2"},
+		Mark:     true,
+		Dirty:    false,
+	})
 	assert.Nil(t, err)
 
-	m, err := s.Member("m1")
-	assert.Nil(t, err)
-	assert.Equal(t, uint(0), m.DataSize)
-	assert.Equal(t, uint(0), m.HashCount)
-
-	m, err = s.Member("m2")
-	assert.Nil(t, err)
-	assert.Equal(t, uint(3000), m.DataSize)
-	assert.Equal(t, uint(2), m.HashCount)
+	s.DeleteHash("h1")
 
 	h, err := s.Hash("h1")
 	assert.Nil(t, err)
-	assert.Equal(t, uint(1000), h.DataSize)
-	assert.Equal(t, 1, len(h.Members))
-	assert.Equal(t, "m2", h.Members[0])
-
-	g, err := s.Globals()
-	assert.Nil(t, err)
-	assert.Equal(t, uint(3000), g.CurrentQuota)
+	assert.Nil(t, h)
 }
 
-func TestRemoveUniqueHash(t *testing.T) {
-	var err error
+func TestUpdateHash(t *testing.T) {
 	s := CreateTestDB(t)
 
-	err = s.AddHash("m2", "h1", 1000)
+	err := s.AddHash("h1", &HashEntry{
+		DataSize: 1000,
+		Links:    []string{"1", "2"},
+		Mark:     true,
+		Dirty:    false,
+	})
 	assert.Nil(t, err)
-	err = s.AddHash("m2", "h2", 2000)
-	assert.Nil(t, err)
-	err = s.RemoveHash("m2", "h1")
+	err = s.UpdateHash("h1", &HashEntry{
+		DataSize: 1001,
+		Links:    []string{"3"},
+		Mark:     false,
+		Dirty:    true,
+	})
 	assert.Nil(t, err)
 
-	m, err := s.Member("m2")
+	h, err := s.Hash("h1")
 	assert.Nil(t, err)
-	assert.Equal(t, uint(2000), m.DataSize)
-	assert.Equal(t, uint(1), m.HashCount)
+	assert.Equal(t, uint(1001), h.DataSize)
+	assert.Equal(t, 1, len(h.Links))
+	assert.Equal(t, "3", h.Links[0])
+	assert.Equal(t, false, h.Mark)
+	assert.Equal(t, true, h.Dirty)
+}
 
-	g, err := s.Globals()
+func TestUpdateHashIter(t *testing.T) {
+	s := CreateTestDB(t)
+
+	assert.Nil(t, s.AddHash("h1", &HashEntry{
+		DataSize: 1000, Links: []string{"1", "2"},
+		Mark: true, Dirty: false,
+	}))
+	assert.Nil(t, s.AddHash("h2", &HashEntry{
+		DataSize: 1001, Links: []string{"1", "2"},
+		Mark: false, Dirty: false,
+	}))
+	assert.Nil(t, s.AddHash("h3", &HashEntry{
+		DataSize: 1002, Links: []string{"1", "2"},
+		Mark: true, Dirty: false,
+	}))
+
+	s.HashUpdateIter(func(hash string, entry *HashEntry) *HashEntry {
+		if !entry.Mark {
+			entry.Dirty = true
+			return entry
+		}
+		return nil
+	})
+
+	h, err := s.Hash("h1")
 	assert.Nil(t, err)
-	assert.Equal(t, uint(2000), g.CurrentQuota)
+	assert.Equal(t, false, h.Dirty)
+
+	h, err = s.Hash("h2")
+	assert.Nil(t, err)
+	assert.Equal(t, true, h.Dirty)
+
+	h, err = s.Hash("h3")
+	assert.Nil(t, err)
+	assert.Equal(t, false, h.Dirty)
 }
