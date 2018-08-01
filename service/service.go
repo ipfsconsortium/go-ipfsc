@@ -11,8 +11,10 @@ import (
 )
 
 type Service struct {
-	ipfsc   *Ipfsc
-	storage *sto.Storage
+	ipfsc     *Ipfsc
+	storage   *sto.Storage
+	stats     ServiceStats
+	laststats ServiceStats
 }
 
 var (
@@ -22,17 +24,18 @@ var (
 )
 
 func NewService(ipfsc *Ipfsc, storage *sto.Storage) *Service {
-	return &Service{ipfsc, storage}
+	return &Service{ipfsc: ipfsc, storage: storage}
 }
 
-func (s *Service) collectENS(expr, path string) (pinned, unpinned, errors int) {
+func (s *Service) collectENS(expr, path string) {
 
 	log.Info("Collecting[ens] " + path + ">" + expr)
 
 	enskey, textkey, err := parseENSEntry(expr)
 	if err != nil {
 		log.WithError(err).Warn("Error parsing ens " + expr)
-		return 0, 0, 1
+		s.stats.Errors++
+		return
 	}
 
 	// Parse an ENS entry
@@ -41,45 +44,36 @@ func (s *Service) collectENS(expr, path string) (pinned, unpinned, errors int) {
 		expr, err := s.ipfsc.ENS().Text(enskey, textkey)
 		if err != nil {
 			log.WithError(err).Warn("Failed to get " + expr)
-			return 0, 0, 1
+			s.stats.Errors++
+			return
 		}
-		return s.collect(expr, enskey+">"+path)
+		s.collect(expr, enskey+">"+path)
 	}
 
 	// Parse manifest entry
 	manifest, err := s.ipfsc.Read(expr)
 	if err != nil {
 		log.WithError(err).Warn("Failed to get " + expr)
-		return 0, 0, 1
+		s.stats.Errors++
+		return
 	}
-
-	pinned, unpinned, errors = 0, 0, 0
 
 	switch v := manifest.(type) {
 
 	case *ConsortiumManifest:
 		for _, member := range v.Members {
-			Δpinned, Δunpinned, Δerrros := s.collect(member.EnsName, path+">"+member.EnsName)
-			pinned += Δpinned
-			unpinned += Δunpinned
-			errors += Δerrros
-
+			s.collect(member.EnsName, path+">"+member.EnsName)
 		}
-		return pinned, unpinned, errors
+		return
 
 	case *PinningManifest:
 		for i, entry := range v.Pin {
-			Δpinned, Δunpinned, Δerrros := s.collect(entry, fmt.Sprintf("%v/%v(#%v)", path, expr, i))
-			pinned += Δpinned
-			unpinned += Δunpinned
-			errors += Δerrros
-
+			s.collect(entry, fmt.Sprintf("%v/%v(#%v)", path, expr, i))
 		}
-		return pinned, unpinned, errors
 
 	default:
 		log.Warn("Unable to parse manifest " + expr)
-		return 1, 0, 0
+		s.stats.Errors++
 	}
 
 }
@@ -103,32 +97,30 @@ func parseENSEntry(expr string) (enskey, textkey string, err error) {
 	return enskey, textkey, nil
 }
 
-func (s *Service) collectIPFS(expr, path string) (pinned, unpinned, errors int) {
+func (s *Service) collectIPFS(expr, path string) {
 	log.Info("Collecting[ipfs] " + path + ">" + expr)
-
-	pinned, unpinned, errors = 0, 0, 0
 
 	// if information is available in local db, use it
 	hentry, _ := s.storage.Hash(expr)
 	if hentry != nil && !hentry.Dirty {
+
+		log.WithField("hash", expr).Info("Already cached")
 		if hentry.Mark {
 			// if already marked, has been also already recursevlly marked
-			return 0, 0, 0
+			return
 		}
 		hentry.Mark = true
 		hentry.Dirty = false
 
 		if err := s.storage.UpdateHash(expr, hentry); err != nil {
 			log.WithError(err).Warn("Failed to update hash db")
-			return 0, 0, 1
+			s.stats.Errors++
+			return
 		}
 		for _, linkhash := range hentry.Links {
-			Δpinned, Δunpinned, Δerrros := s.collectIPFS(linkhash, path+">"+expr+"()")
-			pinned += Δpinned
-			unpinned += Δunpinned
-			errors += Δerrros
+			s.collectIPFS(linkhash, path+">"+expr+"()")
 		}
-		return pinned, unpinned, errors
+		return
 	}
 
 	// object is not in the database, so get data from it
@@ -136,30 +128,30 @@ func (s *Service) collectIPFS(expr, path string) (pinned, unpinned, errors int) 
 	err := s.ipfsc.IPFS().Pin(expr, false)
 	if err != nil {
 		log.WithError(err).Warn("Unable to get object " + expr)
-		return 0, 0, 1
+		s.stats.Errors++
+		return
 	}
+
+	s.stats.Pinned++
+
+	log.WithFields(log.Fields{
+		"hash": expr,
+		"time": time.Since(start),
+	}).Info("Pinned object")
 
 	ipfsObject, err := s.ipfsc.IPFS().ObjectGet(expr)
 	if err != nil {
 		log.WithError(err).Warn("Unable to get object " + expr)
-		return 0, 0, 1
+		s.stats.Errors++
+		return
 	}
-	pinned++
-
-	log.WithFields(log.Fields{
-		"#links":    len(ipfsObject.Links),
-		"len(data)": len(ipfsObject.Data),
-	}).Info("Got Objectats in ", time.Since(start))
 
 	var links []string
 	if len(ipfsObject.Links) > 0 && ipfsObject.Links[0].Name != "" {
 		links = make([]string, len(ipfsObject.Links))
 		for i, link := range ipfsObject.Links {
 			links[i] = link.Hash
-			Δpinned, Δunpinned, Δerrors := s.collectIPFS(link.Hash, path+">"+expr+"("+link.Name+")")
-			pinned += Δpinned
-			unpinned += Δunpinned
-			errors += Δerrors
+			s.collectIPFS(link.Hash, path+">"+expr+"("+link.Name+")")
 		}
 	}
 
@@ -170,26 +162,37 @@ func (s *Service) collectIPFS(expr, path string) (pinned, unpinned, errors int) 
 		Dirty:    false,
 	}); err != nil {
 		log.WithError(err).Warn("Failed to add hash " + expr)
-		return pinned, unpinned, errors + 1
+		s.stats.Errors++
+		return
 	}
 
-	return pinned, unpinned, errors
+	return
 }
 
-func (s *Service) collect(expr, path string) (pinned, unpinned, errors int) {
+func (s *Service) collect(expr, path string) {
+
+	s.stats.Count++
 
 	if strings.HasPrefix(expr, "/ipfs/") {
-		return s.collectIPFS(expr, path)
+		s.collectIPFS(expr, path)
+		return
 	} else if strings.HasPrefix(expr, "0x") {
 		// handle contract, TODO
 	} else if strings.Contains(expr, ".eth") {
-		return s.collectENS(expr, path)
+		s.collectENS(expr, path)
+		return
 	}
 	log.Warn("Unable to find resolver to sync '" + expr + "'")
-	return 0, 0, 1
+	s.stats.Errors++
+	return
 }
 
-func (s *Service) Sync(ensnames []string) (pinned, unpinned, errors int, err error) {
+func (s *Service) Sync(ensnames []string) (ServiceStats, error) {
+
+	s.laststats = s.stats
+	s.stats = ServiceStats{}
+
+	var err error
 
 	/* unmark all hashes */
 	err = s.storage.HashUpdateIter(func(_ string, entry *sto.HashEntry) *sto.HashEntry {
@@ -201,30 +204,26 @@ func (s *Service) Sync(ensnames []string) (pinned, unpinned, errors int, err err
 	})
 
 	if err != nil {
-		return 0, 0, 0, err
+		return s.stats, err
 	}
 
 	/* discover, and mark hashes that needs to be pinned */
-	pinned, unpinned, errors = 0, 0, 0
 	for _, expr := range ensnames {
 		log.WithFields(log.Fields{
 			"expr": expr,
 		}).Info("Processing entries")
 
-		Δpinned, Δunpinned, Δerrors := s.collect(expr, "")
-		pinned += Δpinned
-		unpinned += Δunpinned
-		errors += Δerrors
+		s.collect(expr, "")
 	}
 
-	if errors == 0 {
+	if s.stats.Errors == 0 {
 		/* No errors, unpin the unused hashes and mark as deleted */
 		err = s.storage.HashUpdateIter(func(hash string, entry *sto.HashEntry) *sto.HashEntry {
 			if !entry.Mark {
 				if err := s.ipfsc.IPFS().Unpin(hash); err != nil {
 					log.WithError(err).Warn("Failed to unpin " + hash)
 				}
-				unpinned++
+				s.stats.Unpinned++
 				entry.Dirty = true
 				return entry
 			}
@@ -232,9 +231,10 @@ func (s *Service) Sync(ensnames []string) (pinned, unpinned, errors int, err err
 		})
 
 		if err != nil {
-			return 0, 0, 0, err
+			s.stats.Errors++
+			return s.stats, err
 		}
 
 	}
-	return pinned, unpinned, errors, nil
+	return s.stats, nil
 }

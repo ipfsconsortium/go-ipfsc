@@ -149,11 +149,11 @@ func IpfscRemove(cmd *cobra.Command, args []string) {
 func SyncLoop(cmd *cobra.Command, args []string) {
 
 	must(load(false))
+	srv := service.NewService(ipfsc, storage)
+	go service.HttpServe(srv, cfg.C.API.Port)
 
 	for {
-		service.NewService(
-			ipfsc, storage,
-		).Sync(cfg.C.EnsNames.Remotes)
+		srv.Sync(cfg.C.EnsNames.Remotes)
 	}
 }
 

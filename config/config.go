@@ -31,4 +31,8 @@ type Config struct {
 		EnsRoot     string
 		RPCURL      string
 	}
+
+	API struct {
+		Port int
+	}
 }

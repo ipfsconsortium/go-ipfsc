@@ -1,13 +1,12 @@
 # goic
 
 ```
-        _
-  __ _ (_) _ __    ___
- / _` || || '_ \  / __|
-| (_| || || |_) || (__
- \__, ||_|| .__/  \___|
- |___/    |_|
-IPFS Consortium go implementation.
+                     _          __
+  __ _   ___        (_) _ __   / _| ___   ___
+ / _` | / _ \  ____ | || '_ \ | |_ / __| / __|
+| (_| || (_) ||____|| || |_) ||  _|\__ \| (__
+ \__, | \___/       |_|| .__/ |_|  |___/ \___|
+ |___/                 |_|
 IPFS pinning consortium
 
 Usage:
@@ -41,8 +40,8 @@ Use "gipc [command] --help" for more information about a command.
 ### Install 
 
 - Install golang, see https://golang.org/
-- Install goic with the following command `go get github.com/ipfsconsortium/gipc`
-  - binary should be installed in `~/go/bin/gipc`
+- Install goic with the following command `go get github.com/ipfsconsortium/go-ipfsc`
+  - binary should be installed in `~/go/bin/go-ipfsc`
 
 ### Create config file ./gipc.yaml
 
@@ -72,6 +71,9 @@ networks:
     maxgasprice: <max gas price to pay, e.g. 4000000000=4GWei>
     rpcurl : <URL of WEB3 HTTP API>  
     ensroot : <where ENS root is located, 0x314159265dd8dbb310642f98f50c066173c1259b for mainnet>
+
+api:
+  port: <port for the api web service, like 8991>
 ```
 
 Note:  to create a keystore you can use `geth account new`
@@ -98,7 +100,9 @@ Note:  to create a keystore you can use `geth account new`
 - `gipc sync-loop` (sync continuosuly) 
 - `gipc sync-once` (sync one time) 
 
+### Get the current stats
 
+- go to `http://localhost:8991/stats`
 
 
 
