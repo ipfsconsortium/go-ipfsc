@@ -1,4 +1,4 @@
-package gometh
+package config
 
 // C is the package config
 var C Config

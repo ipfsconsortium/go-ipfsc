@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	banner "github.com/CrowdSurge/banner"
-	cmd "github.com/ipfsconsortium/gipc/cmd"
+	cmd "github.com/ipfsconsortium/go-ipfsc/cmd"
 )
 
 func main() {

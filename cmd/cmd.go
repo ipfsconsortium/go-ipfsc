@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	cmd "github.com/ipfsconsortium/gipc/commands"
-	cfg "github.com/ipfsconsortium/gipc/config"
+	cmd "github.com/ipfsconsortium/go-ipfsc/commands"
+	cfg "github.com/ipfsconsortium/go-ipfsc/config"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"

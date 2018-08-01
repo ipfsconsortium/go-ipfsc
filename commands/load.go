@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	cfg "github.com/ipfsconsortium/gipc/config"
-	eth "github.com/ipfsconsortium/gipc/eth"
-	"github.com/ipfsconsortium/gipc/service"
-	sto "github.com/ipfsconsortium/gipc/storage"
+	cfg "github.com/ipfsconsortium/go-ipfsc/config"
+	eth "github.com/ipfsconsortium/go-ipfsc/eth"
+	"github.com/ipfsconsortium/go-ipfsc/service"
+	sto "github.com/ipfsconsortium/go-ipfsc/storage"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/ethereum/go-ethereum/accounts"

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	shell "github.com/adriamb/go-ipfs-api"
-	"github.com/ipfsconsortium/gipc/storage"
+	"github.com/ipfsconsortium/go-ipfsc/storage"
 	"github.com/stretchr/testify/assert"
 )
 

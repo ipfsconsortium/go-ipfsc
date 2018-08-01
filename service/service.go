@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	sto "github.com/ipfsconsortium/gipc/storage"
+	sto "github.com/ipfsconsortium/go-ipfsc/storage"
 	log "github.com/sirupsen/logrus"
 )
 

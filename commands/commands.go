@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	cfg "github.com/ipfsconsortium/gipc/config"
-	"github.com/ipfsconsortium/gipc/service"
-	sto "github.com/ipfsconsortium/gipc/storage"
+	cfg "github.com/ipfsconsortium/go-ipfsc/config"
+	"github.com/ipfsconsortium/go-ipfsc/service"
+	sto "github.com/ipfsconsortium/go-ipfsc/storage"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/spf13/cobra"

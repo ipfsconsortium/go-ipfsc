@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/ethereum/go-ethereum/crypto"
-	eth "github.com/ipfsconsortium/gipc/eth"
+	eth "github.com/ipfsconsortium/go-ipfsc/eth"
 	log "github.com/sirupsen/logrus"
 )
 
