@@ -64,7 +64,7 @@ func loadIPFSC(withPrivateKey bool) (err error) {
 
 	if withPrivateKey {
 
-		ks := keystore.NewKeyStore(cfg.C.Keystore.Path, keystore.StandardScryptN, keystore.StandardScryptP)
+		ks = keystore.NewKeyStore(cfg.C.Keystore.Path, keystore.StandardScryptN, keystore.StandardScryptP)
 		account, err = ks.Find(accounts.Account{
 			Address: common.HexToAddress(cfg.C.Keystore.Account),
 		})
@@ -76,6 +76,8 @@ func loadIPFSC(withPrivateKey bool) (err error) {
 		if err != nil {
 			return err
 		}
+
+        log.WithField("acc",cfg.C.Keystore.Account).Info("Account unlocked")
 
 	}
 
